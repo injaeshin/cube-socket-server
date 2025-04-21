@@ -3,11 +3,13 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-using Server.Core;
-using Server.Core.Pool;
+using Common.Network;
+using Common.Network.Pool;
+using Common.Network.Session;
+
 using Server.Chat.Users;
 using Server.Chat.Sessions;
-using Server.Core.Session;
+
 
 namespace Server;
 
@@ -38,9 +40,9 @@ public class Program
             })
             .ConfigureServices((context, services) =>
             {
+                services.AddHostedService<SessionHeartbeat>();
                 // 공통 서비스
                 services.AddSingleton<SocketEventArgsPool>();
-                services.AddSingleton<SessionHeartbeat>();
                 // 사용자 관리
                 services.AddSingleton<IUserManager, UserManager>();
                 services.AddSingleton<ISessionManager, SessionManager>();

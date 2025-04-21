@@ -1,11 +1,10 @@
 using Microsoft.Extensions.Logging;
 
-using Server.Core.Session;
-using Server.Core.Pool;
-using Server.Core.Manager;
-using Server.Core.Queue;
+using Common.Network.Session;
+using Common.Network.Pool;
+using Common.Network.Queue;
 using Server.Chat.Users;
-using Common.Protocol;
+using Common.Network.Packet;
 
 namespace Server.Chat.Sessions;
 
@@ -14,9 +13,9 @@ public interface ISessionManager
     void Begin(UserManagerAction userManagerAction);
     void End();
 
-    bool TryRent(out ISocketSession? session);
-    void Return(ISocketSession session);
-    ISocketSession? GetSession(string sessionId);
+    bool TryRent(out ISession? session);
+    void Return(ISession session);
+    ISession? GetSession(string sessionId);
     bool IsMaxConnection();
 }
 
@@ -126,7 +125,7 @@ public class SessionManager : ISessionManager
     }
 
     // ISessionManager 인터페이스 구현
-    public bool TryRent(out ISocketSession? session)
+    public bool TryRent(out ISession? session)
     {
         try
         {
@@ -142,7 +141,7 @@ public class SessionManager : ISessionManager
         }
     }
 
-    public void Return(ISocketSession session)
+    public void Return(ISession session)
     {
         try
         {
@@ -155,7 +154,7 @@ public class SessionManager : ISessionManager
         }
     }
 
-    public ISocketSession? GetSession(string sessionId)
+    public ISession? GetSession(string sessionId)
     {
         try
         {

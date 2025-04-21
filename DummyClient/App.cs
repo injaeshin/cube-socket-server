@@ -1,9 +1,11 @@
-﻿using Common;
-using Common.Protocol;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
+
 using System.Buffers;
 using System.Net.Sockets;
 using System.Text;
+
+using Common.Network;
+using Common.Network.Packet;
 
 namespace __DummyClient;
 
@@ -12,8 +14,8 @@ public class App(ILogger<App> logger) : IDisposable
     private readonly ILogger<App> _logger = logger;
     private Socket? _socket;
     private bool _running = false;
-    private readonly byte[] _receiveBuffer = new byte[Constants.PACKET_BUFFER_SIZE];
-    private readonly PacketBuffer _packetBuffer = new PacketBuffer();
+    private readonly byte[] _receiveBuffer = new byte[Constant.BUFFER_SIZE];
+    private readonly PacketBuffer _packetBuffer = new();
     private bool _disposed = false;  // 이미 Dispose 되었는지 추적
 
     public async Task RunAsync()

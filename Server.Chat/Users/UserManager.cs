@@ -1,13 +1,13 @@
 ﻿using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 
-using Server.Core.Session;
+using Common.Network.Session;
 
 namespace Server.Chat.Users;
 
 public interface IUserManager
 {
-    bool InsertUser(string username, ISocketSession session);
+    bool InsertUser(string username, ISession session);
     bool DeleteUser(string sessionId);
     IUser? GetUserBySession(string sessionId);
     IUser? GetUser(string userName);
@@ -15,9 +15,9 @@ public interface IUserManager
     bool IsAuthenticated(string sessionId);
 }
 
-public class UserManagerAction(Func<string, ISocketSession, bool> onInsert, Func<string, bool> onDelete)
+public class UserManagerAction(Func<string, ISession, bool> onInsert, Func<string, bool> onDelete)
 {
-    public Func<string, ISocketSession, bool> OnInsert = onInsert;
+    public Func<string, ISession, bool> OnInsert = onInsert;
     public Func<string, bool> OnDelete = onDelete;
 }
 
@@ -32,7 +32,7 @@ public class UserManager : IUserManager
         _logger = logger;
     }
 
-    public bool InsertUser(string username, ISocketSession session)
+    public bool InsertUser(string username, ISession session)
     {
         // 이미 로그인한 사용자인지 확인
         if (_users.ContainsKey(username))

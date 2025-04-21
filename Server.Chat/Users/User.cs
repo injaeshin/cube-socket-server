@@ -1,19 +1,19 @@
-using Server.Core.Session;
+using Common.Network.Session;
 
 namespace Server.Chat.Users;
 
 public interface IUser
 {
     string Name { get; }
-    ISocketSession Session { get; }
+    ISession Session { get; }
 }
 
 public class User : IUser
 {
     public string Name { get; }
-    public ISocketSession Session { get; }
+    public ISession Session { get; }
 
-    public User(string name, ISocketSession session)
+    public User(string name, ISession session)
     {
         Name = name;
         Session = session;
