@@ -5,12 +5,12 @@ using Common.Network.Pool;
 using Common.Network.Queue;
 using Server.Chat.Users;
 using Common.Network.Packet;
+using Common.Network.Handler;
 
 namespace Server.Chat.Sessions;
 
 public interface ISessionManager
 {
-    void Begin(UserManagerAction userManagerAction);
     void End();
 
     bool TryRent(out ISession? session);
@@ -21,17 +21,19 @@ public interface ISessionManager
 
 public class SessionManager : ISessionManager
 {
-    private readonly ILogger<SessionManager> _logger;
     private SessionPool _sessionPool = null!;
-    private UserManagerAction _userManagerAction = null!;
+
+    private readonly ILogger<SessionManager> _logger;
     private readonly ReceiveQueue _recvQueue;
     private readonly SendQueue _sendQueue;
+    private readonly IPacketDispatcher _packetDispatcher;
     private readonly ILoggerFactory _loggerFactory;
     private readonly SocketEventArgsPool _receiveArgsPool;
     private readonly SessionHeartbeat _heartbeatMonitor;
     private CancellationTokenSource? _cts;
 
-    public SessionManager(SocketEventArgsPool receiveArgsPool, ILoggerFactory loggerFactory, SessionHeartbeat heartbeatMonitor)
+    public SessionManager(SocketEventArgsPool receiveArgsPool, ILoggerFactory loggerFactory,
+                            SessionHeartbeat heartbeatMonitor, IPacketDispatcher packetDispatcher)
     {
         _logger = loggerFactory.CreateLogger<SessionManager>();
 
@@ -39,16 +41,18 @@ public class SessionManager : ISessionManager
         _loggerFactory = loggerFactory;
         _receiveArgsPool = receiveArgsPool;
         _heartbeatMonitor = heartbeatMonitor;
+        _packetDispatcher = packetDispatcher;
 
         // 1단계: 기본 구성요소 초기화
         _sendQueue = new SendQueue();
         _recvQueue = new ReceiveQueue(loggerFactory.CreateLogger<ReceiveQueue>());
+
+        Initialize();
     }
 
     // 별도 초기화 메서드
-    public void Begin(UserManagerAction userManagerAction)
+    private void Initialize()
     {
-        _userManagerAction = userManagerAction;
         _sessionPool = new SessionPool(CreateUserSession);
 
         _cts = new CancellationTokenSource();
@@ -107,21 +111,13 @@ public class SessionManager : ISessionManager
 
         _heartbeatMonitor.UpdateSessionActivity(e.Session.SessionId);
 
-        switch (e.PacketType)
+        if (e.PacketType == PacketType.Pong)
         {
-            case PacketType.Pong:
-                return;
-            case PacketType.Login:
-                _userManagerAction.OnInsert(e.Session.SessionId, e.Session);
-                e.Session.SendAsync(PacketType.Ping, Array.Empty<byte>());
-                break;
-            default:
-                break;
+            return;
         }
 
-        // if (e.PacketType == PacketType.Login)
-        // {
-        // }
+        // 비동기 작업을 시작하지만 대기하지 않음 (fire-and-forget)
+        _ = _packetDispatcher.DispatchAsync(e.Session, e.Data);
     }
 
     // ISessionManager 인터페이스 구현
@@ -145,7 +141,13 @@ public class SessionManager : ISessionManager
     {
         try
         {
-            _userManagerAction.OnDelete(session.SessionId);
+            if (!_packetDispatcher.TryGetHandler(PacketType.Logout, out var handler))
+            {
+                _logger.LogError("Logout 패킷 핸들러를 찾을 수 없습니다.");
+                return;
+            }
+
+            handler!.HandleAsync(session, ReadOnlyMemory<byte>.Empty);
             _sessionPool.Return(session);
         }
         catch (Exception ex)

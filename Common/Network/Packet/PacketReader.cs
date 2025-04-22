@@ -2,107 +2,112 @@ using System.Text;
 
 namespace Common.Network.Packet;
 
-public ref struct PacketReader
+public class PacketReader
 {
-    private ReadOnlySpan<byte> _span;
+    private readonly ReadOnlyMemory<byte> _memory;
     private int _pos;
 
-    public PacketReader(ReadOnlySpan<byte> span)
+    public PacketReader(ReadOnlyMemory<byte> memory)
     {
-        _span = span;
+        _memory = memory;
         _pos = 0;
     }
 
-    public ReadOnlySpan<byte> RemainingBytes => _span.Slice(_pos);
+    public ReadOnlyMemory<byte> RemainingMemory => _memory.Slice(_pos);
 
-    public bool IsEmpty => _pos >= _span.Length;
+    public ReadOnlySpan<byte> RemainingBytes => _memory.Span.Slice(_pos);
 
-    // 현재 위치 속성 추가
+    public bool IsEmpty => _pos >= _memory.Length;
+
     public int Position => _pos;
 
-    // 남은 바이트 수 속성
-    public int RemainingLength => _span.Length - _pos;
+    public int RemainingLength => _memory.Length - _pos;
 
-    // 용량 확인 도우미 메서드
     private void EnsureRemaining(int count)
     {
-        if (_pos + count > _span.Length)
-            throw new InvalidOperationException($"Buffer underflow: Need {count} bytes, but only {_span.Length - _pos} available");
+        if (_pos + count > _memory.Length)
+            throw new InvalidOperationException($"Buffer underflow: Need {count} bytes, but only {_memory.Length - _pos} available");
+    }
+
+    private ReadOnlySpan<byte> GetCurrentSpan(int length)
+    {
+        EnsureRemaining(length);
+        return _memory.Span.Slice(_pos, length);
     }
 
     public byte ReadByte()
     {
         EnsureRemaining(1);
-        return _span[_pos++];
+        return _memory.Span[_pos++];
     }
 
     public ushort ReadUInt16()
     {
         EnsureRemaining(2);
-        ushort value = (ushort)(_span[_pos] << 8 | _span[_pos + 1]);
+        ushort value = (ushort)(_memory.Span[_pos] << 8 | _memory.Span[_pos + 1]);
         _pos += 2;
         return value;
     }
 
     public uint ReadUInt32()
     {
-        EnsureRemaining(4);
-        uint value = (uint)_span[_pos] << 24 |
-                    (uint)_span[_pos + 1] << 16 |
-                    (uint)_span[_pos + 2] << 8 |
-                    _span[_pos + 3];
+        var span = GetCurrentSpan(4);
+        uint value = (uint)span[0] << 24 |
+                    (uint)span[1] << 16 |
+                    (uint)span[2] << 8 |
+                    span[3];
         _pos += 4;
         return value;
     }
 
     public int ReadInt32()
     {
-        EnsureRemaining(4);
-        int value = _span[_pos] << 24 |
-                    _span[_pos + 1] << 16 |
-                    _span[_pos + 2] << 8 |
-                    _span[_pos + 3];
+        var span = GetCurrentSpan(4);
+        int value = span[0] << 24 |
+                    span[1] << 16 |
+                    span[2] << 8 |
+                    span[3];
         _pos += 4;
         return value;
     }
 
     public long ReadInt64()
     {
-        EnsureRemaining(8);
-        long value = (long)_span[_pos] << 56 |
-                    (long)_span[_pos + 1] << 48 |
-                    (long)_span[_pos + 2] << 40 |
-                    (long)_span[_pos + 3] << 32 |
-                    (long)_span[_pos + 4] << 24 |
-                    (long)_span[_pos + 5] << 16 |
-                    (long)_span[_pos + 6] << 8 |
-                    _span[_pos + 7];
+        var span = GetCurrentSpan(8);
+        long value = (long)span[0] << 56 |
+                    (long)span[1] << 48 |
+                    (long)span[2] << 40 |
+                    (long)span[3] << 32 |
+                    (long)span[4] << 24 |
+                    (long)span[5] << 16 |
+                    (long)span[6] << 8 |
+                    span[7];
         _pos += 8;
         return value;
     }
 
     public float ReadSingle()
     {
-        EnsureRemaining(4);
-        uint bits = (uint)_span[_pos] << 24 |
-                    (uint)_span[_pos + 1] << 16 |
-                    (uint)_span[_pos + 2] << 8 |
-                    _span[_pos + 3];
+        var span = GetCurrentSpan(4);
+        uint bits = (uint)span[0] << 24 |
+                    (uint)span[1] << 16 |
+                    (uint)span[2] << 8 |
+                    span[3];
         _pos += 4;
         return BitConverter.UInt32BitsToSingle(bits);
     }
 
     public double ReadDouble()
     {
-        EnsureRemaining(8);
-        ulong bits = (ulong)_span[_pos] << 56 |
-                    (ulong)_span[_pos + 1] << 48 |
-                    (ulong)_span[_pos + 2] << 40 |
-                    (ulong)_span[_pos + 3] << 32 |
-                    (ulong)_span[_pos + 4] << 24 |
-                    (ulong)_span[_pos + 5] << 16 |
-                    (ulong)_span[_pos + 6] << 8 |
-                    _span[_pos + 7];
+        var span = GetCurrentSpan(8);
+        ulong bits = (ulong)span[0] << 56 |
+                    (ulong)span[1] << 48 |
+                    (ulong)span[2] << 40 |
+                    (ulong)span[3] << 32 |
+                    (ulong)span[4] << 24 |
+                    (ulong)span[5] << 16 |
+                    (ulong)span[6] << 8 |
+                    span[7];
         _pos += 8;
         return BitConverter.UInt64BitsToDouble(bits);
     }
@@ -110,39 +115,32 @@ public ref struct PacketReader
     public ReadOnlySpan<byte> ReadBytes(int length)
     {
         EnsureRemaining(length);
-        var result = _span.Slice(_pos, length);
+        var result = _memory.Span.Slice(_pos, length);
         _pos += length;
         return result;
     }
 
     public string ReadString()
     {
-        // 문자열 길이 읽기
         ushort length = ReadUInt16();
 
-        // 길이가 0이면 빈 문자열 반환
         if (length == 0)
             return string.Empty;
 
         EnsureRemaining(length);
 
-        // 문자열 디코딩
-        string result = Encoding.UTF8.GetString(_span.Slice(_pos, length));
+        string result = Encoding.UTF8.GetString(_memory.Span.Slice(_pos, length));
         _pos += length;
         return result;
     }
 
-    // 배열 읽기 (길이 헤더 포함)
     public T[] ReadArray<T>(Func<T> readItem)
     {
-        // 배열 길이 읽기
         ushort length = ReadUInt16();
 
-        // 길이가 0이면 빈 배열 반환
         if (length == 0)
             return Array.Empty<T>();
 
-        // 배열 생성 및 채우기
         T[] result = new T[length];
         for (int i = 0; i < length; i++)
         {
@@ -152,35 +150,30 @@ public ref struct PacketReader
         return result;
     }
 
-    // 지정된 길이만큼 건너뛰기
     public void Skip(int count)
     {
         EnsureRemaining(count);
         _pos += count;
     }
 
-    // 다음 위치로 이동하되, 경계를 넘어가지 않도록 함
     public void SkipSafe(int count)
     {
-        _pos = Math.Min(_pos + count, _span.Length);
+        _pos = Math.Min(_pos + count, _memory.Length);
     }
 
-    // 특정 패킷 타입을 읽음
     public PacketType ReadPacketType()
     {
         return (PacketType)ReadUInt16();
     }
 
-    // 현재 위치 재설정
     public void Reset()
     {
         _pos = 0;
     }
 
-    // 특정 위치로 이동
     public void Seek(int position)
     {
-        if (position < 0 || position > _span.Length)
+        if (position < 0 || position > _memory.Length)
             throw new ArgumentOutOfRangeException(nameof(position));
 
         _pos = position;

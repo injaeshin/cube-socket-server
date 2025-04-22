@@ -9,6 +9,9 @@ using Common.Network.Session;
 
 using Server.Chat.Users;
 using Server.Chat.Sessions;
+using Common.Network.Handler;
+using Common.Network.Packet;
+using Server.Chat.Handler;
 
 
 namespace Server;
@@ -40,15 +43,15 @@ public class Program
             })
             .ConfigureServices((context, services) =>
             {
-                services.AddHostedService<SessionHeartbeat>();
                 // 공통 서비스
+                services.AddSingleton<SessionHeartbeat>();                
                 services.AddSingleton<SocketEventArgsPool>();
+                services.AddSingleton<IPacketDispatcher, PacketDispatcher>();
                 // 사용자 관리
                 services.AddSingleton<IUserManager, UserManager>();
                 services.AddSingleton<ISessionManager, SessionManager>();
 
                 // 비즈니스 로직 서비스 등록
-
                 services.AddTransient<App>();
             })
             .Build();
@@ -57,10 +60,11 @@ public class Program
         await app.RunAsync();
     }
 
-    public class App(IUserManager userManager, ISessionManager sessionManager, ILoggerFactory loggerFactory)
+    public class App(IUserManager userManager, ISessionManager sessionManager, IPacketDispatcher packetDispatcher, ILoggerFactory loggerFactory)
     {
         private readonly ILogger _logger = loggerFactory.CreateLogger<App>();
         private readonly IUserManager _userManager = userManager;
+        private readonly IPacketDispatcher _packetDispatcher = packetDispatcher;
         private readonly ISessionManager _sessionManager = sessionManager;
         private readonly ILoggerFactory _loggerFactory = loggerFactory;
 
@@ -68,7 +72,7 @@ public class Program
         {
             _logger.LogInformation("서버 시작 중...");
 
-            _sessionManager.Begin(new UserManagerAction(_userManager.InsertUser, _userManager.DeleteUser));
+            RegisterPacketHandler();
 
             var acceptorLogger = _loggerFactory.CreateLogger<SocketAcceptor>();
             var acceptor = new SocketAcceptor(acceptorLogger, OnClientConnected);
@@ -77,7 +81,16 @@ public class Program
             _logger.LogInformation("서버가 실행 중입니다. 종료하려면 Enter 키를 누르세요.");
             Console.ReadLine();
 
+            _logger.LogInformation("서버 종료 중...");
+
+            _userManager.End();
             _sessionManager.End();
+        }
+
+        private void RegisterPacketHandler()
+        {
+            _packetDispatcher.Register(PacketType.Login, new LoginHandler(_loggerFactory.CreateLogger<LoginHandler>(), _userManager));
+            _packetDispatcher.Register(PacketType.Logout, new LogoutHandler(_loggerFactory.CreateLogger<LogoutHandler>(), _userManager));
         }
 
         private async Task OnClientConnected(Socket socket)

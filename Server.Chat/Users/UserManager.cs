@@ -13,12 +13,7 @@ public interface IUserManager
     IUser? GetUser(string userName);
     IEnumerable<IUser> GetAllUsers();
     bool IsAuthenticated(string sessionId);
-}
-
-public class UserManagerAction(Func<string, ISession, bool> onInsert, Func<string, bool> onDelete)
-{
-    public Func<string, ISession, bool> OnInsert = onInsert;
-    public Func<string, bool> OnDelete = onDelete;
+    void End();
 }
 
 public class UserManager : IUserManager
@@ -104,5 +99,13 @@ public class UserManager : IUserManager
     public bool IsAuthenticated(string sessionId)
     {
         return _sessionToUserMap.ContainsKey(sessionId);
+    }
+
+    public void End()
+    {
+        foreach (var user in _users.Values)
+        {
+            user.Session?.Close();
+        }
     }
 }
