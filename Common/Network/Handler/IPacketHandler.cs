@@ -7,5 +7,5 @@ namespace Common.Network.Handler;
 public interface IPacketHandler
 {
     PacketType PacketType { get; }
-    Task HandleAsync(ISession session, ReadOnlyMemory<byte> packet);
+    Task<bool> HandleAsync(ISession session, ReadOnlyMemory<byte> packet);
 }

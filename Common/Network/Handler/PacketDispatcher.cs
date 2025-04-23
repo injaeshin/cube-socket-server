@@ -8,7 +8,7 @@ namespace Common.Network.Handler;
 public interface IPacketDispatcher
 {
     bool TryGetHandler(PacketType type, out IPacketHandler? handler);
-    Task DispatchAsync(ISession session, ReadOnlyMemory<byte> packet);
+    Task<bool> DispatchAsync(ISession session, ReadOnlyMemory<byte> packet);
     void Register(PacketType type, IPacketHandler handler);
 }
 
@@ -32,21 +32,15 @@ public class PacketDispatcher : IPacketDispatcher
         return _handlers.TryGetValue(type, out handler);
     }
 
-    public async Task DispatchAsync(ISession session, ReadOnlyMemory<byte> packet)
+    public async Task<bool> DispatchAsync(ISession session, ReadOnlyMemory<byte> packet)
     {
-        if (!PacketIO.TryParseHeader(packet, out _))
-        {
-            _logger.LogError("Invalid packet header");
-            return;
-        }
-
         var type = PacketIO.GetPacketType(packet);
         if (!_handlers.TryGetValue(type, out var handler))
         {
             _logger.LogError("No handler found for packet type {Type}", type);
-            return;
+            return false;
         }
 
-        await handler.HandleAsync(session, packet);
+        return await handler.HandleAsync(session, packet);
     }
 }

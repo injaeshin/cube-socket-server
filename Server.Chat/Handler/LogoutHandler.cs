@@ -14,11 +14,12 @@ public class LogoutHandler(ILogger<LogoutHandler> logger, IUserManager userManag
 
     public PacketType PacketType => PacketType.Logout;
 
-    public async Task HandleAsync(ISession session, ReadOnlyMemory<byte> packet)
+    public async Task<bool> HandleAsync(ISession session, ReadOnlyMemory<byte> packet)
     {
         _userManager.DeleteUser(session.SessionId);
         _logger.LogInformation("Logout: {SessionId}", session.SessionId);
 
         await Task.CompletedTask;
+        return true;
     }
 }

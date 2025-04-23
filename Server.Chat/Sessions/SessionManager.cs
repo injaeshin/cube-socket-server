@@ -3,7 +3,6 @@ using Microsoft.Extensions.Logging;
 using Common.Network.Session;
 using Common.Network.Pool;
 using Common.Network.Queue;
-using Server.Chat.Users;
 using Common.Network.Packet;
 using Common.Network.Handler;
 
@@ -87,37 +86,40 @@ public class SessionManager : ISessionManager
             }
         };
 
-        var session = new Session(options, _loggerFactory);
+        var session = new Session(options, _loggerFactory, _packetDispatcher);
         session.SessionConnected += OnSessionConnected;
         session.SessionDisconnected += OnSessionDisconnected;
-        session.SessionDataReceived += OnSessionReceivedPacket;
+        session.SessionPreProcess += OnSessionPreProcess;
 
         return session;
     }
 
     private void OnSessionConnected(object? sender, SessionEventArgs e)
     {
+        _logger.LogInformation("[Session Connected] {SessionId}", e.Session.SessionId);
         _heartbeatMonitor.RegisterSession(e.Session.SessionId, e.Session);
     }
 
     private void OnSessionDisconnected(object? sender, SessionEventArgs e)
     {
+        _logger.LogInformation("[Session Disconnected] {SessionId}", e.Session.SessionId);
         _heartbeatMonitor.UnregisterSession(e.Session.SessionId);
     }
 
-    private void OnSessionReceivedPacket(object? sender, SessionDataEventArgs e)
+    private async Task<SessionPreProcessResult> OnSessionPreProcess(object? sender, SessionDataEventArgs e)
     {
-        _logger.LogDebug("[Session Received] {SessionId} - {PacketType}", e.Session.SessionId, e.PacketType);
+        _logger.LogDebug("[Session Received] {SessionId}", e.Session.SessionId);
 
         _heartbeatMonitor.UpdateSessionActivity(e.Session.SessionId);
 
-        if (e.PacketType == PacketType.Pong)
+        var packetType = PacketIO.GetPacketType(e.Data);
+        if (packetType == PacketType.Ping || packetType == PacketType.Pong)
         {
-            return;
+            return SessionPreProcessResult.Handled;
         }
 
-        // 비동기 작업을 시작하지만 대기하지 않음 (fire-and-forget)
-        _ = _packetDispatcher.DispatchAsync(e.Session, e.Data);
+        await Task.CompletedTask;
+        return SessionPreProcessResult.Continue;
     }
 
     // ISessionManager 인터페이스 구현
@@ -127,7 +129,14 @@ public class SessionManager : ISessionManager
         {
             var result = _sessionPool.TryRent(out var activeSession);
             session = activeSession;
-            return result;
+            
+            if (!result || session == null)
+            {
+                _logger.LogWarning("세션 대여 실패: 사용 가능한 세션 없음");
+                return false;
+            }
+            
+            return true;
         }
         catch (Exception ex)
         {

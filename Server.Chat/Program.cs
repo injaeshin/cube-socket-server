@@ -12,6 +12,7 @@ using Server.Chat.Sessions;
 using Common.Network.Handler;
 using Common.Network.Packet;
 using Server.Chat.Handler;
+using Server.Chat.Service;
 
 
 namespace Server;
@@ -44,12 +45,16 @@ public class Program
             .ConfigureServices((context, services) =>
             {
                 // 공통 서비스
-                services.AddSingleton<SessionHeartbeat>();                
+                services.AddSingleton<SessionHeartbeat>();
                 services.AddSingleton<SocketEventArgsPool>();
                 services.AddSingleton<IPacketDispatcher, PacketDispatcher>();
+                services.AddSingleton<IChatService, ChatService>();
                 // 사용자 관리
                 services.AddSingleton<IUserManager, UserManager>();
                 services.AddSingleton<ISessionManager, SessionManager>();
+
+                // 핸들러 등록
+                services.AddTransient<ChatMessageHandler>();
 
                 // 비즈니스 로직 서비스 등록
                 services.AddTransient<App>();
@@ -75,7 +80,7 @@ public class Program
             RegisterPacketHandler();
 
             var acceptorLogger = _loggerFactory.CreateLogger<SocketAcceptor>();
-            var acceptor = new SocketAcceptor(acceptorLogger, OnClientConnected);
+            var acceptor = new SocketAcceptor(acceptorLogger, OnClientConnected, Constant.PORT, Constant.MAX_LISTEN_CONNECTION);
             await acceptor.Begin();
 
             _logger.LogInformation("서버가 실행 중입니다. 종료하려면 Enter 키를 누르세요.");
@@ -87,10 +92,14 @@ public class Program
             _sessionManager.End();
         }
 
+        private ILogger<T> CreateLogger<T>() => _loggerFactory.CreateLogger<T>();
+
         private void RegisterPacketHandler()
         {
-            _packetDispatcher.Register(PacketType.Login, new LoginHandler(_loggerFactory.CreateLogger<LoginHandler>(), _userManager));
-            _packetDispatcher.Register(PacketType.Logout, new LogoutHandler(_loggerFactory.CreateLogger<LogoutHandler>(), _userManager));
+            _packetDispatcher.Register(PacketType.Login, new LoginHandler(CreateLogger<LoginHandler>(), _userManager));
+            _packetDispatcher.Register(PacketType.Logout, new LogoutHandler(CreateLogger<LogoutHandler>(), _userManager));
+            _packetDispatcher.Register(PacketType.ChatMessage, new ChatMessageHandler(CreateLogger<ChatMessageHandler>(),
+                                                                    new ChatService(CreateLogger<ChatService>(), _userManager)));
         }
 
         private async Task OnClientConnected(Socket socket)

@@ -14,27 +14,79 @@ public class LoginHandler(ILogger<LoginHandler> logger, IUserManager userManager
 
     public PacketType PacketType => PacketType.Login;
 
-    public async Task HandleAsync(ISession session, ReadOnlyMemory<byte> packet)
+    public async Task<bool> HandleAsync(ISession session, ReadOnlyMemory<byte> packet)
     {
-        var reader = new PacketReader(packet);
-
-        var packetType = reader.ReadPacketType();
-        if (packetType != PacketType.Login)
+        try
         {
-            _logger.LogError("Invalid packet type: {PacketType}", packetType);
-            return;
-        }
+            // 원시 패킷 데이터 로깅
+            _logger.LogDebug("Login packet raw data: {HexDump}, Length: {Length}", 
+                BitConverter.ToString(packet.ToArray()), packet.Length);
+            
+            var reader = new PacketReader(packet);
+            var packetType = reader.ReadPacketType();
+            if (packetType != PacketType.Login)
+            {
+                _logger.LogError("Invalid packet type: {PacketType}, expected: {ExpectedType}", packetType, PacketType.Login);
+                return false;
+            }
 
-        if (!_userManager.InsertUser(session.SessionId, session))
+            // 패킷 페이로드 길이 검증
+            if (reader.RemainingLength < 2)
+            {
+                _logger.LogError("Login packet does not contain string length field: {RemainingLength} bytes", reader.RemainingLength);
+                return false;
+            }
+
+            // 먼저 문자열 길이를 검사
+            var stringLengthPos = reader.Position;
+            var stringLength = reader.ReadUInt16();
+            
+            _logger.LogDebug("Login string length: {StringLength}, remaining bytes: {RemainingBytes}, Position: {Position}", 
+                stringLength, reader.RemainingLength, reader.Position);
+            
+            if (stringLength > 100) // 최대 길이 제한 설정
+            {
+                _logger.LogError("Login string too long: {StringLength} bytes", stringLength);
+                return false;
+            }
+            
+            if (reader.RemainingLength < stringLength)
+            {
+                _logger.LogError("Login string length ({StringLength}) exceeds remaining packet size ({RemainingLength})", 
+                    stringLength, reader.RemainingLength);
+                
+                // 디버깅을 위한 패킷 덤프
+                _logger.LogDebug("Packet dump: {HexDump}", BitConverter.ToString(packet.ToArray()));
+                return false;
+            }
+
+            // 남은 모든 바이트 데이터 로깅
+            var remainingBytes = new byte[reader.RemainingLength];
+            packet.Slice(reader.Position).CopyTo(new Memory<byte>(remainingBytes));
+            _logger.LogDebug("Remaining bytes: {HexDump}", BitConverter.ToString(remainingBytes));
+
+            // 위치 복원하고 문자열 읽기
+            reader.Seek(stringLengthPos);
+            var id = reader.ReadString();
+            _logger.LogInformation("Login: {Id}, Bytes: [{HexString}]", id, 
+                string.Join(" ", System.Text.Encoding.UTF8.GetBytes(id).Select(b => b.ToString("X2"))));
+
+            //사용자 등록
+            if (!_userManager.InsertUser(id, session))
+            {
+                _logger.LogError("Failed to insert user: {SessionId}", session.SessionId);
+                return false;
+            }
+
+            await session.SendAsync(PacketType.LoginSuccess, Array.Empty<byte>());
+            return true;
+        }
+        catch (Exception ex)
         {
-            _logger.LogError("Failed to insert user: {SessionId}", session.SessionId);
-            return;
+            _logger.LogError(ex, "Error processing login packet: {ErrorMessage}", ex.Message);
+            // 예외 정보와 함께 패킷 덤프
+            _logger.LogDebug("Packet dump: {HexDump}", BitConverter.ToString(packet.ToArray()));
+            return false;
         }
-
-        var id = reader.ReadString();
-        var password = reader.ReadString();
-        _logger.LogInformation("Login: {Id}, {Password}", id, password);
-
-        await session.SendAsync(PacketType.LoginSuccess, Array.Empty<byte>());
     }
 }

@@ -48,7 +48,7 @@ public class UserManager : IUserManager
         _users.TryAdd(username, user);
         _sessionToUserMap.TryAdd(session.SessionId, username);
 
-        _logger.LogDebug("Added user: {Username}, {SessionId}", username, session.SessionId);
+        _logger.LogInformation("Added user: {Username}, {SessionId}", username, session.SessionId);
         _logger.LogDebug("Current users: {Users}", _users.Count);
         return true;
     }

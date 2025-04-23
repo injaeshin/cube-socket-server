@@ -60,10 +60,12 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
 
     public void UnregisterSession(string sessionId)
     {
-        if (_sessions.TryRemove(sessionId, out _))
+        if (!_sessions.TryRemove(sessionId, out _))
         {
-            _logger.LogDebug("Session {sessionId} unregistered", sessionId);
+            _logger.LogError("Session {sessionId} not found", sessionId);
         }
+
+        _logger.LogDebug("Session {sessionId} unregistered", sessionId);
     }
 
     public void UpdateSessionActivity(string sessionId)

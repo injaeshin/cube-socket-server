@@ -78,7 +78,15 @@ public class ReceiveQueue
                 return;
             }
 
-            await packet.Session.OnProcessReceivedAsync(packet.Data);
+            if (packet.Session.IsConnectionAlive())
+            {
+                await packet.Session.OnProcessReceivedAsync(packet);
+            }
+            else
+            {
+                packet.Session.Close();
+                _logger.LogWarning("[RecvQueue] Session is not alive: {SessionId}", packet.SessionId);
+            }
         }
         catch (ObjectDisposedException ex)
         {

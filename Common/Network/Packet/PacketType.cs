@@ -14,8 +14,6 @@ public enum PacketType : ushort
 
     Chat = 0x0100,
     ChatMessage = 0x0101,
-    JoinChannel = 0x0102,
-    LeaveChannel = 0x0103,
-    GetChannelList = 0x0104,
-    GetUserList = 0x0105,
+
+    Max,
 }

@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 
 namespace Common.Network.Pool;
 
-public class ObjectPool<T> where T : class
+public class ObjectPool<T> where T : class, IDisposable
 {
     private readonly ConcurrentStack<T> _pool;
     private readonly Func<T> _factory;
@@ -42,7 +42,17 @@ public class ObjectPool<T> where T : class
 
     public void Close()
     {
+        foreach (var item in _pool)
+        {
+            item.Dispose();
+        }
+
         _pool.Clear();
+    }
+
+    public void Dispose()
+    {
+        Close();
     }
 
     public int Count => _pool.Count;

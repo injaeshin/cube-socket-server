@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 
 using Common.Network.Packet;
 using Common.Network.Transport;
+using System.Buffers;
 
 namespace Common.Network.Session;
 
@@ -13,54 +14,66 @@ public class SocketSession(SocketSessionOptions options, ILogger<SocketSession> 
 
     private Socket _socket = null!;
     private SocketAsyncEventArgs _receiveArgs = null!;
-    private PacketBuffer _packetBuffer = new();
 
+    private readonly PacketBuffer _packetBuffer = new();
     private readonly SessionResource _resource = options.Resource;
     private readonly SessionQueue _queue = options.Queue;
 
-    private static int _sessionCounter = 0; // 세션 카운터 (스레드 안전하게 관리해야 함)
-    private static readonly object _counterLock = new object(); // 스레드 동기화를 위한 락 객체
-
     public event EventHandler<SessionEventArgs>? SessionConnected;
     public event EventHandler<SessionEventArgs>? SessionDisconnected;
-    public event EventHandler<SessionDataEventArgs>? SessionDataReceived;
+    public event SessionDataEventHandlerAsync? SessionPreProcess;
 
     public void CreateSessionId()
     {
-        // 1. 타임스탬프 생성 (밀리초 단위)
-        string timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString("x"); // 16진수로 변환
-        
-        // 2. 증가하는 세션 번호 (스레드 안전하게)
-        int sessionNumber;
-        lock (_counterLock)
-        {
-            sessionNumber = ++_sessionCounter;
-            if (_sessionCounter > 9999) _sessionCounter = 0; // 번호 재사용
-        }
-        
-        // 3. 랜덤 값 추가 (충돌 방지)
-        string randomPart = new Random().Next(0, 0xFFF).ToString("x3"); // 3자리 16진수
-        
-        // 세션 ID 형식: "SID_{timestamp}_{sessionNumber:D4}_{randomPart}"
-        // 예: "SID_1a2b3c4d_0042_f7e"
-        SessionId = $"SID_{timestamp}_{sessionNumber:D4}_{randomPart}";
+        string shortTime = DateTime.Now.ToString("HHmm");
+        string randomPart = Guid.NewGuid().ToString("N")[..4];
+        SessionId = $"S_{shortTime}_{randomPart}";
     }
 
     public void Run(Socket socket)
     {
-        _packetBuffer.Reset();
+        try
+        {
+            _logger.LogDebug("[Session Run] 세션 시작: {SessionId}", SessionId);
 
-        ConfigureKeepAlive(socket);
+            _packetBuffer.Reset();
 
-        _socket = socket;
-        _receiveArgs = _resource.OnRentRecvArgs.Invoke() ?? throw new Exception("Receive args is null");;
-        _receiveArgs.Completed += OnReceiveCompleted;
-        _receiveArgs.UserToken = this;
+            ConfigureKeepAlive(socket);
+            ConfigureNoDelay(socket);
 
-        SessionConnected?.Invoke(this, new SessionEventArgs(this));
-        OnConnect(this);
+            _socket = socket;
+            // ReceiveArgs 대여 시도
+            
+            _receiveArgs = _resource.OnRentRecvArgs?.Invoke() ?? throw new InvalidOperationException("Failed to rent SocketAsyncEventArgs.");
+            // ReceiveArgs가 null인 경우 더 명확한 오류 메시지와 함께 세션 정리
+            if (_receiveArgs == null)
+            {
+                _logger.LogError("[Session Run] SocketAsyncEventArgs 대여 실패: {SessionId}", SessionId);
+                CleanupSocket(false);
+                throw new InvalidOperationException($"세션 {SessionId}의 수신 작업을 위한 SocketAsyncEventArgs를 대여할 수 없습니다. 서버 리소스가 부족할 수 있습니다.");
+            }
 
-        DoReceive();
+            //_receiveArgs.SetBuffer(new byte[Constant.BUFFER_SIZE], 0, Constant.BUFFER_SIZE);
+            _receiveArgs.Completed += OnReceiveCompleted;
+            _receiveArgs.UserToken = this;
+
+
+            OnConnect(this);
+            SessionConnected?.Invoke(this, new SessionEventArgs(this));
+
+            DoReceive();
+        }
+        catch (InvalidOperationException)
+        {
+            // 이미 로깅된 예외 재전파
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Session Run] 세션 시작 중 오류 발생: {SessionId}", SessionId);
+            SafeCleanupResources();
+            throw;
+        }
     }
 
     /// <summary>
@@ -102,14 +115,50 @@ public class SocketSession(SocketSessionOptions options, ILogger<SocketSession> 
         }
     }
 
+    /// <summary>
+    /// 소켓의 네이글 알고리즘 설정을 구성합니다.
+    /// </summary>
+    private void ConfigureNoDelay(Socket socket)
+    {
+        try
+        {
+            // TCP 소켓에 대해서만 NoDelay 설정
+            if (socket.ProtocolType == ProtocolType.Tcp)
+            {
+                // 네이글 알고리즘 비활성화 (NoDelay = true)
+                socket.NoDelay = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("네이글 알고리즘 설정 중 오류 발생: {Message}", ex.Message);
+        }
+    }
+
     private void DoReceive()
     {
         if (_socket.Connected == false)
-            return;
-
-        if (!_socket.ReceiveAsync(_receiveArgs))
         {
-            OnReceiveCompleted(null, _receiveArgs);
+            _logger.LogWarning("[DoReceive] 소켓이 연결되지 않았습니다: {SessionId}", SessionId);
+            return;
+        }
+
+        try
+        {
+            _logger.LogDebug("[DoReceive] ReceiveAsync 호출: {SessionId}", SessionId);
+            bool pending = _socket.ReceiveAsync(_receiveArgs);
+            _logger.LogDebug("[DoReceive] ReceiveAsync 결과: pending={Pending}, {SessionId}", pending, SessionId);
+
+            if (!pending)
+            {
+                _logger.LogDebug("[DoReceive] 즉시 완료, OnReceiveCompleted 직접 호출: {SessionId}", SessionId);
+                OnReceiveCompleted(null, _receiveArgs);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[DoReceive] ReceiveAsync 호출 중 오류 발생: {SessionId}", SessionId);
+            Close(DisconnectReason.SocketError);
         }
     }
 
@@ -140,34 +189,82 @@ public class SocketSession(SocketSessionOptions options, ILogger<SocketSession> 
     {
         try
         {
+            _logger.LogDebug("[OnReceiveCompleted] 호출됨: SessionId={SessionId}, BytesTransferred={BytesTransferred}, Buffer={BufferLength}", 
+                SessionId, e.BytesTransferred, e.Buffer?.Length ?? 0);
+
             // 연결 종료 확인
             DisconnectReason disconnectReason = GetDisconnectReason(e);
             if (disconnectReason != DisconnectReason.None)
             {
+                _logger.LogDebug("[OnReceiveCompleted] 연결 종료 감지: {Reason}, {SessionId}", disconnectReason, SessionId);
                 ForceClose(disconnectReason);
                 return;
             }
 
             var data = e.MemoryBuffer[..e.BytesTransferred];
-            if (!_packetBuffer.Append(data))
+            _logger.LogDebug("[OnReceiveCompleted] 데이터 수신: {Length} 바이트, {SessionId}, 데이터: {ByteData}", 
+                data.Length, SessionId, 
+                BitConverter.ToString(data.Slice(0, Math.Min(data.Length, 32)).ToArray()) + (data.Length > 32 ? "..." : ""));
+            
+            if (!_packetBuffer.TryAppend(data))
             {
-                _logger.LogWarning("Failed to append packet data");
+                _logger.LogWarning("[OnReceiveCompleted] 패킷 버퍼 추가 실패: {SessionId}", SessionId);
                 Close(DisconnectReason.InvalidData);
                 return;
             }
 
             while (_packetBuffer.TryReadPacket(out var packet, out var rentedBuffer))
             {
-                var packetType = PacketIO.GetPacketType(packet);
-                SessionDataReceived?.Invoke(this, new SessionDataEventArgs(this, packetType, packet));
-                await _queue.OnRecvEnqueueAsync(new ReceivedPacket(SessionId, packet, rentedBuffer, this));
+                _logger.LogDebug("[OnReceiveCompleted] 패킷 읽기 성공: {Length} 바이트, {SessionId}, 데이터: {ByteData}", 
+                    packet.Length, SessionId, 
+                    BitConverter.ToString(packet.Slice(0, Math.Min(packet.Length, 32)).ToArray()) + (packet.Length > 32 ? "..." : ""));
+                
+                // buffer = opcode + payload
+                // TODO - 전처리 [1. 복호화 2. 패킷 타입 확인 3. 패킷 타입에 따른 처리] 4. 큐에 넣기
+                if (SessionPreProcess == null)
+                {
+                    _logger.LogError("[OnReceiveCompleted] SessionPreProcess 이벤트 핸들러가 등록되지 않았습니다: {SessionId}", SessionId);
+                    if (rentedBuffer != null)
+                    {
+                        ArrayPool<byte>.Shared.Return(rentedBuffer);
+                    }
+                    continue;
+                }
+
+                var preProcessResult = await SessionPreProcess.Invoke(this, new SessionDataEventArgs(this, packet));
+                _logger.LogDebug("[OnReceiveCompleted] PreProcess 결과: {Result}, {SessionId}", preProcessResult, SessionId);
+
+                // 전처리 결과에 따라 패킷 처리
+                switch (preProcessResult)
+                {
+                    case SessionPreProcessResult.Continue:
+                        // 패킷을 큐에 추가하여 계속 처리
+                        await _queue.OnRecvEnqueueAsync(new ReceivedPacket(SessionId, packet, rentedBuffer, this));
+                        break;
+
+                    case SessionPreProcessResult.Discard:
+                        // 패킷 처리를 중단하고 버퍼 반환
+                        if (rentedBuffer != null)
+                        {
+                            ArrayPool<byte>.Shared.Return(rentedBuffer);
+                        }
+                        break;
+
+                    case SessionPreProcessResult.Handled:
+                        // 전처리에서 이미 처리 완료됨, 버퍼만 반환
+                        if (rentedBuffer != null)
+                        {
+                            ArrayPool<byte>.Shared.Return(rentedBuffer);
+                        }
+                        break;
+                }
             }
 
             DoReceive();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error onReceiveCompleted");
+            _logger.LogError(ex, "[OnReceiveCompleted] 오류 발생: {SessionId}", SessionId);
             Close(DisconnectReason.SocketError);
         }
     }
@@ -197,7 +294,7 @@ public class SocketSession(SocketSessionOptions options, ILogger<SocketSession> 
         {
             // 종료 사유 로깅
             LogDisconnection(reason);
-            
+
             // 소켓 정리, 이벤트 발생, 리소스 정리
             CleanupSession(IsGracefulReason(reason), reason);
         }
@@ -217,7 +314,7 @@ public class SocketSession(SocketSessionOptions options, ILogger<SocketSession> 
         {
             // 종료 사유 로깅
             LogDisconnection(reason);
-            
+
             // 소켓 정리, 이벤트 발생, 리소스 정리
             CleanupSession(false, reason);
         }
@@ -233,7 +330,7 @@ public class SocketSession(SocketSessionOptions options, ILogger<SocketSession> 
     /// </summary>
     private static bool IsGracefulReason(DisconnectReason reason)
     {
-        return  reason == DisconnectReason.GracefulDisconnect ||
+        return reason == DisconnectReason.GracefulDisconnect ||
                 reason == DisconnectReason.ApplicationRequest ||
                 reason == DisconnectReason.ServerShutdown;
     }
@@ -300,7 +397,7 @@ public class SocketSession(SocketSessionOptions options, ILogger<SocketSession> 
         // 세션 풀로 반환
         _resource.OnReturnSession?.Invoke(this);
     }
-    
+
     /// <summary>
     /// 예외 발생 시에도 안전하게 리소스를 정리합니다.
     /// </summary>
@@ -348,9 +445,9 @@ public class SocketSession(SocketSessionOptions options, ILogger<SocketSession> 
         _logger.LogDebug("[Session Disconnected] {SessionId} - Reason: {Reason}", SessionId, reason);
     }
 
-    public virtual Task OnProcessReceivedAsync(ReadOnlyMemory<byte> data)
+    public virtual Task OnProcessReceivedAsync(ReceivedPacket packet)
     {
-        _logger.LogDebug("[Session Process Received] {SessionId} - Length: {DataLength}", SessionId, data.Length);
+        _logger.LogDebug("[Session Process Received] {SessionId} - Length: {DataLength}", SessionId, packet.Data.Length);
         return Task.CompletedTask;
     }
 
@@ -365,13 +462,13 @@ public class SocketSession(SocketSessionOptions options, ILogger<SocketSession> 
         {
             // 소켓 상태 확인
             bool isDisconnected = CheckSocketStatus();
-            
+
             if (isDisconnected)
             {
                 _logger.LogDebug("[Connection Broken] {SessionId} detected via Poll", SessionId);
                 ForceClose(DisconnectReason.SocketError); // 연결 끊김 감지 시 강제 종료
             }
-            
+
             return !isDisconnected;
         }
         catch (SocketException ex)
@@ -428,6 +525,8 @@ public class SocketSession(SocketSessionOptions options, ILogger<SocketSession> 
                 if (disposing)
                 {
                     _logger.LogDebug("[Dispose] Cleaning up session resources for {SessionId}", SessionId);
+                    // 패킷 버퍼 초기화
+                    ResetBuffer();
                     CleanupResources();
                 }
             }
@@ -440,6 +539,15 @@ public class SocketSession(SocketSessionOptions options, ILogger<SocketSession> 
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// 패킷 버퍼를 초기화합니다.
+    /// </summary>
+    public void ResetBuffer()
+    {
+        _packetBuffer.Reset();
+        _logger.LogDebug("[Session Reset] 패킷 버퍼 초기화: {SessionId}", SessionId);
     }
 }
 
