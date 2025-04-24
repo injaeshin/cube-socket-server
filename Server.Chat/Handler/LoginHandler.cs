@@ -23,13 +23,6 @@ public class LoginHandler(ILogger<LoginHandler> logger, IUserManager userManager
                 BitConverter.ToString(packet.ToArray()), packet.Length);
             
             var reader = new PacketReader(packet);
-            var packetType = reader.ReadPacketType();
-            if (packetType != PacketType.Login)
-            {
-                _logger.LogError("Invalid packet type: {PacketType}, expected: {ExpectedType}", packetType, PacketType.Login);
-                return false;
-            }
-
             // 패킷 페이로드 길이 검증
             if (reader.RemainingLength < 2)
             {
@@ -37,36 +30,36 @@ public class LoginHandler(ILogger<LoginHandler> logger, IUserManager userManager
                 return false;
             }
 
-            // 먼저 문자열 길이를 검사
-            var stringLengthPos = reader.Position;
-            var stringLength = reader.ReadUInt16();
+            //// 먼저 문자열 길이를 검사
+            //var stringLengthPos = reader.Position;
+            //var stringLength = reader.ReadUInt16();
             
-            _logger.LogDebug("Login string length: {StringLength}, remaining bytes: {RemainingBytes}, Position: {Position}", 
-                stringLength, reader.RemainingLength, reader.Position);
+            //_logger.LogDebug("Login string length: {StringLength}, remaining bytes: {RemainingBytes}, Position: {Position}", 
+            //    stringLength, reader.RemainingLength, reader.Position);
             
-            if (stringLength > 100) // 최대 길이 제한 설정
-            {
-                _logger.LogError("Login string too long: {StringLength} bytes", stringLength);
-                return false;
-            }
+            //if (stringLength > 100) // 최대 길이 제한 설정
+            //{
+            //    _logger.LogError("Login string too long: {StringLength} bytes", stringLength);
+            //    return false;
+            //}
             
-            if (reader.RemainingLength < stringLength)
-            {
-                _logger.LogError("Login string length ({StringLength}) exceeds remaining packet size ({RemainingLength})", 
-                    stringLength, reader.RemainingLength);
+            //if (reader.RemainingLength < stringLength)
+            //{
+            //    _logger.LogError("Login string length ({StringLength}) exceeds remaining packet size ({RemainingLength})", 
+            //        stringLength, reader.RemainingLength);
                 
-                // 디버깅을 위한 패킷 덤프
-                _logger.LogDebug("Packet dump: {HexDump}", BitConverter.ToString(packet.ToArray()));
-                return false;
-            }
+            //    // 디버깅을 위한 패킷 덤프
+            //    _logger.LogDebug("Packet dump: {HexDump}", BitConverter.ToString(packet.ToArray()));
+            //    return false;
+            //}
 
-            // 남은 모든 바이트 데이터 로깅
-            var remainingBytes = new byte[reader.RemainingLength];
-            packet.Slice(reader.Position).CopyTo(new Memory<byte>(remainingBytes));
-            _logger.LogDebug("Remaining bytes: {HexDump}", BitConverter.ToString(remainingBytes));
+            //// 남은 모든 바이트 데이터 로깅
+            //var remainingBytes = new byte[reader.RemainingLength];
+            //packet.Slice(reader.Position).CopyTo(new Memory<byte>(remainingBytes));
+            //_logger.LogDebug("Remaining bytes: {HexDump}", BitConverter.ToString(remainingBytes));
 
-            // 위치 복원하고 문자열 읽기
-            reader.Seek(stringLengthPos);
+            //// 위치 복원하고 문자열 읽기
+            //reader.Seek(stringLengthPos);
             var id = reader.ReadString();
             _logger.LogInformation("Login: {Id}, Bytes: [{HexString}]", id, 
                 string.Join(" ", System.Text.Encoding.UTF8.GetBytes(id).Select(b => b.ToString("X2"))));
@@ -78,7 +71,10 @@ public class LoginHandler(ILogger<LoginHandler> logger, IUserManager userManager
                 return false;
             }
 
-            await session.SendAsync(PacketType.LoginSuccess, Array.Empty<byte>());
+            using var payload = new PacketWriter();
+            payload.WriteType(PacketType.LoginSuccess);
+            await session.SendAsync(payload.ToPacket());
+
             return true;
         }
         catch (Exception ex)

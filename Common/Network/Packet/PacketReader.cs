@@ -161,10 +161,10 @@ public class PacketReader
         _pos = Math.Min(_pos + count, _memory.Length);
     }
 
-    public PacketType ReadPacketType()
-    {
-        return (PacketType)ReadUInt16();
-    }
+    //public PacketType ReadPacketType()
+    //{
+    //    return (PacketType)ReadUInt16();
+    //}
 
     public void Reset()
     {

@@ -1,6 +1,4 @@
-﻿using Common.Network.Packet;
-
-namespace Common.Network.Session;
+﻿namespace Common.Network.Session;
 
 /// <summary>
 /// 세션 이벤트 처리 결과를 나타내는 열거형

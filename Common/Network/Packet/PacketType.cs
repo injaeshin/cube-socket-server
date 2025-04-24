@@ -3,9 +3,10 @@
 // [ 2 bytes Length ][ 2 bytes Opcode ][ Payload... ]
 //       ↑                ↑
 //    ushort          PacketType (ushort enum)
-//
+
 public enum PacketType : ushort
 {
+    None = 0x0000,
     Ping = 0x0001,
     Pong = 0x0002,
     Login = 0x0003,

@@ -12,7 +12,6 @@ using Server.Chat.Sessions;
 using Common.Network.Handler;
 using Common.Network.Packet;
 using Server.Chat.Handler;
-using Server.Chat.Service;
 
 
 namespace Server;
@@ -48,10 +47,10 @@ public class Program
                 services.AddSingleton<SessionHeartbeat>();
                 services.AddSingleton<SocketEventArgsPool>();
                 services.AddSingleton<IPacketDispatcher, PacketDispatcher>();
-                services.AddSingleton<IChatService, ChatService>();
+
                 // 사용자 관리
                 services.AddSingleton<IUserManager, UserManager>();
-                services.AddSingleton<ISessionManager, SessionManager>();
+                services.AddSingleton<ISessionManager, SessionManager_>();
 
                 // 핸들러 등록
                 services.AddTransient<ChatMessageHandler>();
@@ -88,6 +87,7 @@ public class Program
 
             _logger.LogInformation("서버 종료 중...");
 
+            acceptor.End();
             _userManager.End();
             _sessionManager.End();
         }
@@ -98,27 +98,15 @@ public class Program
         {
             _packetDispatcher.Register(PacketType.Login, new LoginHandler(CreateLogger<LoginHandler>(), _userManager));
             _packetDispatcher.Register(PacketType.Logout, new LogoutHandler(CreateLogger<LogoutHandler>(), _userManager));
-            _packetDispatcher.Register(PacketType.ChatMessage, new ChatMessageHandler(CreateLogger<ChatMessageHandler>(),
-                                                                    new ChatService(CreateLogger<ChatService>(), _userManager)));
+            _packetDispatcher.Register(PacketType.ChatMessage, new ChatMessageHandler(CreateLogger<ChatMessageHandler>()));
         }
 
         private async Task OnClientConnected(Socket socket)
         {
-            if (_sessionManager.IsMaxConnection())
+            if (!_sessionManager.CreateSession(socket))
             {
-                _logger.LogError("최대 접속 수 초과");
                 socket.Close();
                 return;
-            }
-
-            if (_sessionManager.TryRent(out var session))
-            {
-                session!.Run(socket);
-            }
-            else
-            {
-                _logger.LogWarning("세션 생성 실패");
-                socket.Close();
             }
 
             await Task.CompletedTask;

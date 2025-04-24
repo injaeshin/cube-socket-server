@@ -1,21 +1,19 @@
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 
-using Common.Network.Transport;
+namespace Common.Network.Transport;
 
-namespace Common.Network.Queue;
-
-public class ReceiveQueue
+public class ReceiveChannel
 {
-    private readonly ILogger<ReceiveQueue> _logger;
-    private readonly Channel<ReceivedPacket> _channel = Channel.CreateUnbounded<ReceivedPacket>();
+    private readonly ILogger<ReceiveChannel> _logger;
+    private readonly Channel<ReceivedPacket> _channel;
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private readonly Task _workerTask;
 
-    public ReceiveQueue(ILogger<ReceiveQueue> logger)
+    public ReceiveChannel(ILogger<ReceiveChannel> logger)
     {
         _logger = logger;
-        
+
         _channel = Channel.CreateUnbounded<ReceivedPacket>(
             new UnboundedChannelOptions
             {
@@ -80,7 +78,7 @@ public class ReceiveQueue
 
             if (packet.Session.IsConnectionAlive())
             {
-                await packet.Session.OnProcessReceivedAsync(packet);
+                await packet.Session.OnProcessReceivedPacketAsync(packet);
             }
             else
             {

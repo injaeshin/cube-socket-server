@@ -45,9 +45,9 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
         _logger.LogInformation("Session heartbeat monitor stopped");
     }
 
-    public void RegisterSession(string sessionId, ISession session)
+    public void RegisterSession(ISession session)
     {
-        _sessions[sessionId] = new SessionInfo
+        _sessions[session.SessionId] = new SessionInfo
         {
             Session = session,
             LastActivity = DateTime.UtcNow,
@@ -55,7 +55,7 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
             State = SessionState.Active,
         };
 
-        _logger.LogDebug("Session {sessionId} registered", sessionId);
+        _logger.LogDebug("Session {sessionId} registered", session.SessionId);
     }
 
     public void UnregisterSession(string sessionId)
@@ -90,12 +90,6 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
 
             foreach (var (session, info) in sessionToProcess)
             {
-                if (!info.Session.IsConnectionAlive())
-                {
-                    UnregisterSession(session);
-                    continue;
-                }
-
                 switch (info.State)
                 {
                     case SessionState.Active:
@@ -144,7 +138,14 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
     {
         try
         {
-            await info.Session.SendAsync(PacketType.Ping, Array.Empty<byte>());
+            if (!info.Session.IsConnectionAlive())
+            {
+                UnregisterSession(info.Session.SessionId);
+                return;
+            }
+            
+            using var payload = new PacketWriter(PacketType.Ping);
+            await info.Session.SendAsync(payload.ToPacket());
 
             info.LastPingTime = DateTime.UtcNow;
             info.State = SessionState.PingSent;

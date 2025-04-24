@@ -95,22 +95,17 @@ public class App(ILogger<App> logger) : IDisposable
 
         try
         {
-            // 사용자명의 길이가 너무 길지 않도록 제한
             if (username.Length > 20)
-            {
                 username = username.Substring(0, 20);
-            }
-            
-            // 패킷 페이로드를 직접 구성하여 문자열이 올바르게 인코딩되도록 함
+
             using var writer = new PacketWriter();
-            writer.Write(username);  // 문자열 자체를 바로 쓰기
-            
-            var payload = writer.ToMemory();
-            
-            _logger.LogDebug("[{name}] 로그인 요청 페이로드: 길이={length}, 내용={hex}", 
-                _name, payload.Length, BitConverter.ToString(payload.ToArray()));
-                
-            await SendPacketAsync(PacketType.Login, payload);
+            writer.WriteType(PacketType.Login).WriteString(username);
+            var packet = writer.ToPacket();
+
+            _logger.LogDebug("[{name}] 로그인 요청 패킷: 길이={length}, 내용={hex}",
+                _name, packet.Length, BitConverter.ToString(packet.ToArray()));
+
+            await SendPacketAsync(packet);
             _logger.LogInformation("[{name}] Login request sent with username: {username}", _name, username);
         }
         catch (Exception ex)
@@ -119,44 +114,44 @@ public class App(ILogger<App> logger) : IDisposable
         }
     }
 
-    private async Task SendPacketAsync(PacketType type, ReadOnlyMemory<byte> payload)
+    private async Task SendPacketAsync(ReadOnlyMemory<byte> packet)
     {
         if (_socket == null || !_socket.Connected)
             return;
 
-        var packet = PacketIO.Build(_name, _socket, type, payload);
         try
         {
-            // 패킷 내용 디버깅 로그 추가
-            _logger.LogDebug("[{name}] Sending packet: Type={type}({typeValue:X4}), PayloadLength={payloadLength}, TotalLength={totalLength}",
-                _name, type, (ushort)type, payload.Length, packet.Data.Length);
-            
-            if (packet.Data.Length > 0)
+            _logger.LogDebug("[{name}] Sending packet: Length={length}", _name, packet.Length);
+            if (packet.Length > 0)
             {
-                // 패킷 헤더 바이트 확인
-                byte[] headerBytes = packet.Data.Span.Slice(0, Math.Min(4, packet.Data.Length)).ToArray();
+                byte[] headerBytes = packet.Slice(0, Math.Min(4, packet.Length)).ToArray();
                 _logger.LogDebug("[{name}] Packet header bytes: {headerHex}",
                     _name, BitConverter.ToString(headerBytes));
             }
-            
-            await _socket.SendAsync(packet.Data, SocketFlags.None);
-            _logger.LogInformation("[{name}] Packet sent: Type={type}, Length={length}", _name, type, packet.Data.Length);
+            await _socket.SendAsync(packet, SocketFlags.None);
+            _logger.LogInformation("[{name}] Packet sent: Length={length}", _name, packet.Length);
         }
-        finally
+        catch (Exception ex)
         {
-            packet.Return();
+            _logger.LogError(ex, "[{name}] Packet send error", _name);
         }
     }
 
     private async Task SendPingAsync()
     {
         _logger.LogInformation("[{name}] Sending manual ping...", _name);
-        await SendPacketAsync(PacketType.Ping, Array.Empty<byte>());
+        using var writer = new PacketWriter();
+        writer.WriteType(PacketType.Ping);
+        var packet = writer.ToPacket();
+        await SendPacketAsync(packet);
     }
 
     private async Task SendPongAsync()
     {
-        await SendPacketAsync(PacketType.Pong, Array.Empty<byte>());
+        using var writer = new PacketWriter();
+        writer.WriteType(PacketType.Pong);
+        var packet = writer.ToPacket();
+        await SendPacketAsync(packet);
         _logger.LogInformation("[{name}] Sent Pong response", _name);
     }
 
@@ -164,22 +159,17 @@ public class App(ILogger<App> logger) : IDisposable
     {
         try
         {
-            // 메시지 길이 제한
             if (message.Length > 200)
-            {
-                message = message.Substring(0, 200); 
-            }
-            
-            // 패킷 페이로드를 직접 구성하여 문자열이 올바르게 인코딩되도록 함
+                message = message.Substring(0, 200);
+
             using var writer = new PacketWriter();
-            writer.Write(message);  // 문자열 인코딩 (길이 포함)
-            
-            var payload = writer.ToMemory();
-            
-            _logger.LogDebug("[{name}] 채팅 메시지 페이로드: 길이={length}, 내용={hex}", 
-                _name, payload.Length, BitConverter.ToString(payload.ToArray()));
-            
-            await SendPacketAsync(PacketType.ChatMessage, payload);
+            writer.WriteType(PacketType.ChatMessage).WriteString(message);
+            var packet = writer.ToPacket();
+
+            _logger.LogDebug("[{name}] 채팅 메시지 패킷: 길이={length}, 내용={hex}",
+                _name, packet.Length, BitConverter.ToString(packet.ToArray()));
+
+            await SendPacketAsync(packet);
             _logger.LogInformation("[{name}] Sent ChatMessage: {message}", _name, message);
         }
         catch (Exception ex)
@@ -220,21 +210,21 @@ public class App(ILogger<App> logger) : IDisposable
                     }
 
                     // 완전한 패킷이 버퍼에 있는 동안 계속 처리
-                    while (_packetBuffer.TryReadPacket(out var packet, out var rentedBuffer))
+                    while (_packetBuffer.TryReadPacket(out var packetType, out var packet, out var rentedBuffer))
                     {
                         try
                         {
-                            // 패킷 데이터 디버깅 (처음 몇 바이트만)
-                            if (packet.Length > 0)
-                            {
-                                int packetBytesToLog = Math.Min(packet.Length, 16);
-                                byte[] packetBytes = packet.Slice(0, packetBytesToLog).ToArray();
-                                _logger.LogDebug("[{name}] Extracted packet ({length} bytes): {hexDump}{more}",
-                                    _name, packet.Length, BitConverter.ToString(packetBytes),
-                                    packet.Length > packetBytesToLog ? "..." : "");
-                            }
+                            // // 패킷 데이터 디버깅 (처음 몇 바이트만)
+                            // if (packet.Length > 0)
+                            // {
+                            //     int packetBytesToLog = Math.Min(packet.Length, 16);
+                            //     byte[] packetBytes = packet.Slice(0, packetBytesToLog).ToArray();
+                            //     _logger.LogDebug("[{name}] Extracted packet ({length} bytes): {hexDump}{more}",
+                            //         _name, packet.Length, BitConverter.ToString(packetBytes),
+                            //         packet.Length > packetBytesToLog ? "..." : "");
+                            // }
                             
-                            await ProcessPacketAsync(packet);
+                            await ProcessPacketAsync(packetType, packet);
                         }
                         finally
                         {
@@ -255,37 +245,26 @@ public class App(ILogger<App> logger) : IDisposable
         });
     }
 
-    private async Task ProcessPacketAsync(ReadOnlyMemory<byte> packetData)
+    private async Task ProcessPacketAsync(PacketType packetType, ReadOnlyMemory<byte> payload)
     {
         try
         {
-            if (packetData.Length < Constant.OPCODE_SIZE)
-            {
-                _logger.LogError("[{name}] 패킷 크기가 너무 작습니다: {Length} 바이트", _name, packetData.Length);
-                return;
-            }
+            // payload는 Length/Opcode를 제외한 실제 데이터만 전달됨
+            // 바디가 없을 수도 있음 (Ping 등)
 
-            // 바이트 레벨 디버깅
-            var typeBytes = packetData.Slice(0, Constant.OPCODE_SIZE);
-            ushort rawOpcode = (ushort)(typeBytes.Span[0] << 8 | typeBytes.Span[1]);
-
-            // 패킷 타입 확인
-            var packetType = PacketIO.GetPacketType(packetData);
-            var packetPayload = PacketIO.GetPayload(packetData);
-            
-            // 디버깅을 위한 추가 로그
             int packetTypeValue = (int)packetType;
-            _logger.LogDebug("[{name}] Processing packet: Type={packetType}({packetTypeValue:X4}), RawBytes=[{typeHex}], Size={Length}, Payload={PayloadSize}", 
-                _name, packetType, packetTypeValue, BitConverter.ToString(typeBytes.ToArray()), packetData.Length, packetPayload.Length);
+            _logger.LogDebug("[{name}] Processing packet: Type={packetType}({packetTypeValue:X4}), Size={Length}", 
+                _name, packetType, packetTypeValue, payload.Length);
 
             // 패킷 타입 유효성 검증
             if (!Enum.IsDefined(typeof(PacketType), packetType) || packetTypeValue == 0 || packetTypeValue >= (int)PacketType.Max)
             {
-                _logger.LogWarning("[{name}] 알 수 없는 패킷 타입: {rawOpcode:X4}, 바이트: {b0:X2} {b1:X2}", 
-                    _name, rawOpcode, typeBytes.Span[0], typeBytes.Span[1]);
-                
-                // 전체 패킷 덤프 로깅
-                _logger.LogDebug("[{name}] 패킷 덤프: {hexDump}", _name, BitConverter.ToString(packetData.ToArray()));
+                _logger.LogWarning("[{name}] 알 수 없는 패킷 타입: {packetType}({packetTypeValue:X4})", 
+                    _name, packetType, packetTypeValue);
+                if (payload.Length > 0)
+                {
+                    _logger.LogDebug("[{name}] 패킷 덤프: {hexDump}", _name, BitConverter.ToString(payload.ToArray()));
+                }
                 return;
             }
 
@@ -297,26 +276,25 @@ public class App(ILogger<App> logger) : IDisposable
                     break;
 
                 case PacketType.LoginSuccess:
-                    ProcessLoginResponse(packetPayload);
+                    ProcessLoginResponse(payload);
                     break;
 
                 case PacketType.ChatMessage:
-                    ProcessChatMessage(packetPayload);
+                    ProcessChatMessage(payload);
                     break;
 
                 default:
                     _logger.LogWarning("[{name}] 처리되지 않은 패킷 타입: {packetType}({packetTypeValue:X4}), Size={Length}", 
-                        _name, packetType, packetTypeValue, packetData.Length);
+                        _name, packetType, packetTypeValue, payload.Length);
                     break;
             }
         }
         catch (Exception ex) 
         {
-            _logger.LogError(ex, "[{name}] 패킷 처리 중 오류 발생. 패킷 크기: {Length}", _name, packetData.Length);
-            // 오류가 발생한 패킷 덤프
-            if (packetData.Length > 0)
+            _logger.LogError(ex, "[{name}] 패킷 처리 중 오류 발생. 패킷 크기: {Length}", _name, payload.Length);
+            if (payload.Length > 0)
             {
-                _logger.LogDebug("[{name}] 오류 패킷 덤프: {hexDump}", _name, BitConverter.ToString(packetData.ToArray()));
+                _logger.LogDebug("[{name}] 오류 패킷 덤프: {hexDump}", _name, BitConverter.ToString(payload.ToArray()));
             }
         }
     }

@@ -1,4 +1,3 @@
-using System;
 using System.Buffers;
 using System.Diagnostics;
 
@@ -32,67 +31,42 @@ public class PacketBuffer
         return TryAppend(data.Span);
     }
 
-    public bool TryReadPacket(out ReadOnlyMemory<byte> packet, out byte[]? rentedBuffer)
+    public bool TryReadPacket(out PacketType packetType, out ReadOnlyMemory<byte> payload, out byte[]? rentedBuffer)
     {
-        packet = ReadOnlyMemory<byte>.Empty;
+        packetType = PacketType.None;
+        payload = ReadOnlyMemory<byte>.Empty;
         rentedBuffer = null;
-
-        if (!TryPeekUShort(out ushort bodySize))
-        {
-            Debug.WriteLine($"[PacketBuffer] TryReadPacket: Length field not available, DataSize={DataSize()}");
+        if (DataSize() < 2)
             return false;
-        }
-
-        if (bodySize == 0 || bodySize + Constant.LENGTH_SIZE > Constant.PACKET_BUFFER_SIZE)
-        {
-            Debug.WriteLine($"[PacketBuffer] TryReadPacket: Invalid body size: {bodySize}");
+        ushort length = ReadUInt16FromBuffer(0);
+        if (length < 2 || length > Constant.MAX_PACKET_SIZE)
             return false;
-        }
-
-        if (DataSize() < Constant.LENGTH_SIZE + bodySize)
-        {
-            Debug.WriteLine($"[PacketBuffer] TryReadPacket: Not enough data. Need={Constant.LENGTH_SIZE + bodySize}, Available={DataSize()}");
+        int totalPacketSize = 2 + length;
+        if (DataSize() < totalPacketSize)
             return false;
-        }
-
-        // 패킷 크기 로깅
-        Debug.WriteLine($"[PacketBuffer] TryReadPacket: Reading packet - BodySize={bodySize}, ReadPos={_readPos}, WritePos={_writePos}");
-
-        // Skip length field without modifying _readPos yet
-        int packetStartPos = (_readPos + Constant.LENGTH_SIZE) % Constant.PACKET_BUFFER_SIZE;
-
-        rentedBuffer = ArrayPool<byte>.Shared.Rent(bodySize);
-
-        if (Constant.PACKET_BUFFER_SIZE - packetStartPos >= bodySize)
+        ushort opcode = ReadUInt16FromBuffer(2);
+        packetType = (PacketType)opcode;
+        int payloadLength = length - 2;
+        if (payloadLength == 0)
         {
-            // 연속된 메모리 공간에서 읽는 경우
-            _buffer.AsSpan(packetStartPos, bodySize).CopyTo(rentedBuffer);
-            
-            // 디버깅용 - 읽은 처음 몇 바이트 로깅
-            if (bodySize > 0)
-            {
-                var logBytes = Math.Min((int)bodySize, (int)16);
-                var logData = BitConverter.ToString(_buffer.AsSpan(packetStartPos, logBytes).ToArray());
-                Debug.WriteLine($"[PacketBuffer] Read continuous: {logData}{(bodySize > 16 ? "..." : "")}");
-            }
+            Skip(totalPacketSize);
+            return true;
+        }
+        int payloadStart = (_readPos + 4) % Constant.PACKET_BUFFER_SIZE;
+        if (Constant.PACKET_BUFFER_SIZE - payloadStart >= payloadLength)
+        {
+            payload = new ReadOnlyMemory<byte>(_buffer, payloadStart, payloadLength);
+            rentedBuffer = null;
         }
         else
         {
-            // 버퍼의 끝과 시작에 걸쳐 있는 경우
-            int firstPart = Constant.PACKET_BUFFER_SIZE - packetStartPos;
-            _buffer.AsSpan(packetStartPos, firstPart).CopyTo(rentedBuffer);
-            _buffer.AsSpan(0, bodySize - firstPart).CopyTo(rentedBuffer.AsSpan(firstPart));
-            
-            // 디버깅용 - 읽은 처음 몇 바이트 로깅 (두 부분으로 나누어 읽은 경우)
-            var firstBytes = BitConverter.ToString(_buffer.AsSpan(packetStartPos, Math.Min(firstPart, 8)).ToArray());
-            var secondBytes = bodySize - firstPart > 0 
-                ? BitConverter.ToString(_buffer.AsSpan(0, Math.Min(bodySize - firstPart, 8)).ToArray()) 
-                : "";
-            Debug.WriteLine($"[PacketBuffer] Read split: first({firstPart})={firstBytes}, second({bodySize - firstPart})={secondBytes}");
+            int firstPart = Constant.PACKET_BUFFER_SIZE - payloadStart;
+            rentedBuffer = ArrayPool<byte>.Shared.Rent(payloadLength);
+            _buffer.AsSpan(payloadStart, firstPart).CopyTo(rentedBuffer.AsSpan(0, firstPart));
+            _buffer.AsSpan(0, payloadLength - firstPart).CopyTo(rentedBuffer.AsSpan(firstPart, payloadLength - firstPart));
+            payload = new ReadOnlyMemory<byte>(rentedBuffer, 0, payloadLength);
         }
-
-        packet = new ReadOnlyMemory<byte>(rentedBuffer, 0, bodySize);
-        Skip(Constant.LENGTH_SIZE + bodySize);
+        Skip(totalPacketSize);
         return true;
     }
 
@@ -115,7 +89,7 @@ public class PacketBuffer
         return true;
     }
 
-    private void Skip(int count)
+    public void Skip(int count)
     {
         _readPos = (_readPos + count) % Constant.PACKET_BUFFER_SIZE;
     }
@@ -141,5 +115,30 @@ public class PacketBuffer
         _readPos = 0;
         _writePos = 0;
         Debug.WriteLine("[PacketBuffer] Reset: Buffer has been reset");
+    }
+
+    public bool TryRead(int maxBytes, out ReadOnlyMemory<byte> chunk, out byte[]? rentedBuffer)
+    {
+        int dataSize = DataSize();
+        rentedBuffer = null;
+        if (dataSize == 0)
+        {
+            chunk = ReadOnlyMemory<byte>.Empty;
+            return false;
+        }
+        int toRead = Math.Min(dataSize, maxBytes);
+        if (_writePos > _readPos || _readPos + toRead <= Constant.PACKET_BUFFER_SIZE)
+        {
+            chunk = new ReadOnlyMemory<byte>(_buffer, _readPos, toRead);
+        }
+        else
+        {
+            int firstPart = Constant.PACKET_BUFFER_SIZE - _readPos;
+            rentedBuffer = ArrayPool<byte>.Shared.Rent(toRead);
+            _buffer.AsSpan(_readPos, firstPart).CopyTo(rentedBuffer.AsSpan(0, firstPart));
+            _buffer.AsSpan(0, toRead - firstPart).CopyTo(rentedBuffer.AsSpan(firstPart, toRead - firstPart));
+            chunk = new ReadOnlyMemory<byte>(rentedBuffer, 0, toRead);
+        }
+        return true;
     }
 }

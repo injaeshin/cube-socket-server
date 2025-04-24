@@ -14,11 +14,9 @@ public class SessionPool
         _sessions = new ConcurrentDictionary<string, ISession>();
     }
 
-    public bool TryRent(out ISession? session)
+    public bool TryRent(out ISession session)
     {
         session = _pool.Rent();
-        // 세션 풀에서 대여할 때 패킷 버퍼를 초기화
-        session.ResetBuffer();
         session.CreateSessionId();
         if (!_sessions.TryAdd(session.SessionId, session))
         {
@@ -37,15 +35,17 @@ public class SessionPool
     public void Return(ISession session)
     {
         _sessions.TryRemove(session.SessionId, out _);
-        
-        // 세션 반환 전에 패킷 버퍼를 초기화
-        session.ResetBuffer();
-        
         _pool.Return(session);
     }
 
     public bool IsMaxConnection()
     {
         return _sessions.Count >= Constant.MAX_CONNECTION;
+    }
+
+    public void Close()
+    {
+        _pool.Close();
+        _sessions.Clear();
     }
 }

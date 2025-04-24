@@ -1,23 +1,21 @@
-using System.Net.Sockets;
 using Common.Network.Transport;
 
 namespace Common.Network.Session;
 
 public class SessionResource
 {
-    public required Func<SocketAsyncEventArgs?> OnRentRecvArgs;
-    public required Action<SocketAsyncEventArgs> OnReturnRecvArgs;
     public required Action<ISession> OnReturnSession;
 }
 
-public class SessionQueue
+public class SessionKeepAlive
 {
-    public required Func<ReceivedPacket, Task> OnRecvEnqueueAsync;
-    public required Func<SendRequest, Task> OnSendEnqueueAsync;
+    public required Action<ISession> OnRegister;
+    public required Action<string> OnUnregister;
+    public required Action<string> OnUpdate;
 }
 
-public class SocketSessionOptions
+public class SessionEvents
 {
     public required SessionResource Resource;
-    public required SessionQueue Queue;
+    public required SessionKeepAlive KeepAlive;
 }

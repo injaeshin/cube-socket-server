@@ -28,19 +28,4 @@ public static class Extensions
     {
         return memory.Span;
     }
-
-
-}
-
-public static class SocketAsyncEventArgsExtensions
-{
-    public static ReadOnlySpan<byte> ReceivedSpan(this SocketAsyncEventArgs e)
-    {
-        return new ReadOnlySpan<byte>(e.Buffer!, e.Offset, e.BytesTransferred);
-    }
-
-    public static ArraySegment<byte> ReceivedArraySegment(this SocketAsyncEventArgs e)
-    {
-        return new ArraySegment<byte>(e.Buffer!, e.Offset, e.BytesTransferred);
-    }
 }

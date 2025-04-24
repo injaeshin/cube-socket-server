@@ -1,29 +1,29 @@
+//using Server.Chat.Users;
 //using System.Collections.Concurrent;
-//using Common.Protocol;
 
 //namespace Server.Chat;
 
 //public class ChatChannel
 //{
 //    public string ChannelId { get; }
-//    private readonly ConcurrentDictionary<string, User> _members = new();
+//    private readonly ConcurrentDictionary<string, IUser> _members = new();
 
 //    public ChatChannel(string channelId)
 //    {
 //        ChannelId = channelId;
 //    }
 
-//    public void AddMember(User user)
+//    public void AddMember(IUser user)
 //    {
-//        _members.TryAdd(user.UserName, user);
+//        _members.TryAdd(user.Name, user);
 //    }
 
-//    public void RemoveMember(User user)
+//    public void RemoveMember(IUser user)
 //    {
-//        _members.TryRemove(user.UserName, out _);
+//        _members.TryRemove(user.Name, out _);
 //    }
 
-//    public IEnumerable<User> GetAllMembers()
+//    public IEnumerable<IUser> GetAllMembers()
 //    {
 //        return _members.Values;
 //    }
