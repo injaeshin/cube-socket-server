@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 
+using Common.Network;
 using Common.Network.Handler;
 using Common.Network.Packet;
 using Common.Network.Session;
@@ -12,7 +13,7 @@ public class LoginHandler(ILogger<LoginHandler> logger, IUserManager userManager
     private readonly ILogger _logger = logger;
     private readonly IUserManager _userManager = userManager;
 
-    public PacketType PacketType => PacketType.Login;
+    public MessageType Type => MessageType.Login;
 
     public async Task<bool> HandleAsync(ISession session, ReadOnlyMemory<byte> packet)
     {
@@ -72,7 +73,7 @@ public class LoginHandler(ILogger<LoginHandler> logger, IUserManager userManager
             }
 
             using var payload = new PacketWriter();
-            payload.WriteType(PacketType.LoginSuccess);
+            payload.WriteType(MessageType.LoginSuccess);
             await session.SendAsync(payload.ToPacket());
 
             return true;

@@ -1,9 +1,8 @@
 using System.Net.Sockets;
 using System.Threading.Channels;
 using System.Buffers;
-using Common.Network.Packet;
 
-namespace Common.Network.Transport;
+namespace Common.Network.Buffer;
 
 public class SendChannel
 {

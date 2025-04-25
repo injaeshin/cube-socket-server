@@ -1,8 +1,8 @@
+using System.Buffers;
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
+using Common.Network.Buffer;
 using Common.Network.Packet;
-using Common.Network.Transport;
-using System.Buffers;
 
 namespace Common.Network.Session;
 
@@ -23,26 +23,22 @@ public interface ISession : IDisposable
 public class Session(ILogger<Session> logger) : ISession, IDisposable
 {
     private readonly ILogger _logger = logger;
-    protected readonly PacketBuffer _receiveBuffer = new();
-    protected readonly PacketBuffer _sendBuffer = new();
+    private readonly PacketBuffer _receiveBuffer = new();
     private Socket _socket = null!;
-    private SocketAsyncEventArgs _receiveArgs = null!;
-    private string sessionId = string.Empty;
-
     public Socket Socket => _socket;
+    private SocketAsyncEventArgs _receiveArgs = null!;
     public SocketAsyncEventArgs ReceiveArgs => _receiveArgs;
+
+    private string sessionId = string.Empty;
     public string SessionId => sessionId;
 
-    #region 세션 ID 생성
     public void CreateSessionId()
     {
         string shortTime = DateTime.Now.ToString("HHmm");
         string randomPart = Guid.NewGuid().ToString("N")[..4];
         sessionId = $"S_{shortTime}_{randomPart}";
     }
-    #endregion
 
-    #region 세션 실행 및 수신
     public void Run(Socket socket, SocketAsyncEventArgs receiveArgs)
     {
         try
@@ -145,9 +141,7 @@ public class Session(ILogger<Session> logger) : ISession, IDisposable
             Close(DisconnectReason.SocketError);
         }
     }
-    #endregion
 
-    #region 세션 종료 및 정리
     public void Close(DisconnectReason reason = DisconnectReason.ApplicationRequest, bool force = false)
     {
         if (!force && (_socket == null || !_socket.Connected))
@@ -204,6 +198,7 @@ public class Session(ILogger<Session> logger) : ISession, IDisposable
             _receiveArgs.Completed -= OnReceiveCompleted;
             _receiveArgs.UserToken = null;
         }
+
         _receiveBuffer.Reset();
     }
 
@@ -226,7 +221,7 @@ public class Session(ILogger<Session> logger) : ISession, IDisposable
             _logger.LogDebug("Remote endpoint: {RemoteEndPoint}", _socket.RemoteEndPoint);
         }
     }
-    #endregion
+
 
     #region 이벤트 및 패킷 처리
     protected virtual void OnConnected(ISession session)
@@ -353,5 +348,4 @@ public class Session(ILogger<Session> logger) : ISession, IDisposable
     }
     #endregion
 }
-
 

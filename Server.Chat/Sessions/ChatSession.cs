@@ -2,9 +2,9 @@ using Microsoft.Extensions.Logging;
 
 using Common.Network;
 using Common.Network.Session;
-using Common.Network.Transport;
 using Common.Network.Packet;
 using Common.Network.Handler;
+using Common.Network.Buffer;
 
 namespace Server.Chat.Sessions;
 
@@ -17,13 +17,13 @@ public class ChatSession : Session, ISession
     private readonly ReceiveChannel _recvChannel;
     private readonly SendChannel _sendChannel;
 
-    public ChatSession(ILoggerFactory loggerFactory, IPacketDispatcher packetDispatcher, SessionEvents events) : base(loggerFactory.CreateLogger<Session>())
+    public ChatSession(ILoggerFactoryHelper loggerFactoryHelper, IPacketDispatcher packetDispatcher, SessionEvents events) : base(loggerFactoryHelper.CreateLogger<Session>())
     {
-        _logger = loggerFactory.CreateLogger<ChatSession>();
+        _logger = loggerFactoryHelper.CreateLogger<ChatSession>();
         _packetDispatcher = packetDispatcher;
         _events = events;
 
-        _recvChannel = new ReceiveChannel(loggerFactory.CreateLogger<ReceiveChannel>());
+        _recvChannel = new ReceiveChannel(loggerFactoryHelper.CreateLogger<ReceiveChannel>());
         _sendChannel = new SendChannel();
     }
     
@@ -48,7 +48,7 @@ public class ChatSession : Session, ISession
         _events.KeepAlive.OnUpdate(SessionId);
 
         // 선행 처리
-        if (packet.Type == PacketType.Ping || packet.Type == PacketType.Pong)
+        if (packet.Type == MessageType.Ping || packet.Type == MessageType.Pong)
         {
             return;
         }

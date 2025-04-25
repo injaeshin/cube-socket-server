@@ -1,4 +1,3 @@
-
 namespace Common.Network;
 
 // 종료 유형을 표현하는 열거형 추가 (인터페이스 레벨로 이동)

@@ -7,6 +7,7 @@ using System.Text;
 using Common.Network;
 using Common.Network.Packet;
 using Common.Network.Message;
+using Common.Network.Buffer;
 
 namespace __DummyClient;
 
@@ -15,7 +16,7 @@ public class App(ILogger<App> logger) : IDisposable
     private readonly ILogger<App> _logger = logger;
     private Socket? _socket;
     private bool _running = false;
-    private readonly byte[] _receiveBuffer = new byte[Constant.BUFFER_SIZE];
+    private readonly byte[] _receiveBuffer = new byte[NetConsts.BUFFER_SIZE];
     private readonly PacketBuffer _packetBuffer = new();
     private bool _disposed = false;  // 이미 Dispose 되었는지 추적
 
@@ -99,7 +100,7 @@ public class App(ILogger<App> logger) : IDisposable
                 username = username.Substring(0, 20);
 
             using var writer = new PacketWriter();
-            writer.WriteType(PacketType.Login).WriteString(username);
+            writer.WriteType(MessageType.Login).WriteString(username);
             var packet = writer.ToPacket();
 
             _logger.LogDebug("[{name}] 로그인 요청 패킷: 길이={length}, 내용={hex}",
@@ -141,7 +142,7 @@ public class App(ILogger<App> logger) : IDisposable
     {
         _logger.LogInformation("[{name}] Sending manual ping...", _name);
         using var writer = new PacketWriter();
-        writer.WriteType(PacketType.Ping);
+        writer.WriteType(MessageType.Ping);
         var packet = writer.ToPacket();
         await SendPacketAsync(packet);
     }
@@ -149,7 +150,7 @@ public class App(ILogger<App> logger) : IDisposable
     private async Task SendPongAsync()
     {
         using var writer = new PacketWriter();
-        writer.WriteType(PacketType.Pong);
+        writer.WriteType(MessageType.Pong);
         var packet = writer.ToPacket();
         await SendPacketAsync(packet);
         _logger.LogInformation("[{name}] Sent Pong response", _name);
@@ -163,7 +164,7 @@ public class App(ILogger<App> logger) : IDisposable
                 message = message.Substring(0, 200);
 
             using var writer = new PacketWriter();
-            writer.WriteType(PacketType.ChatMessage).WriteString(message);
+            writer.WriteType(MessageType.ChatMessage).WriteString(message);
             var packet = writer.ToPacket();
 
             _logger.LogDebug("[{name}] 채팅 메시지 패킷: 길이={length}, 내용={hex}",
@@ -245,11 +246,11 @@ public class App(ILogger<App> logger) : IDisposable
         });
     }
 
-    private async Task ProcessPacketAsync(PacketType packetType, ReadOnlyMemory<byte> payload)
+    private async Task ProcessPacketAsync(MessageType packetType, ReadOnlyMemory<byte> payload)
     {
         try
         {
-            // payload는 Length/Opcode를 제외한 실제 데이터만 전달됨
+            // payload는 Length/MessageType를 제외한 실제 데이터만 전달됨
             // 바디가 없을 수도 있음 (Ping 등)
 
             int packetTypeValue = (int)packetType;
@@ -257,7 +258,7 @@ public class App(ILogger<App> logger) : IDisposable
                 _name, packetType, packetTypeValue, payload.Length);
 
             // 패킷 타입 유효성 검증
-            if (!Enum.IsDefined(typeof(PacketType), packetType) || packetTypeValue == 0 || packetTypeValue >= (int)PacketType.Max)
+            if (!Enum.IsDefined(typeof(MessageType), packetType) || packetTypeValue == 0 || packetTypeValue >= (int)MessageType.Max)
             {
                 _logger.LogWarning("[{name}] 알 수 없는 패킷 타입: {packetType}({packetTypeValue:X4})", 
                     _name, packetType, packetTypeValue);
@@ -270,16 +271,16 @@ public class App(ILogger<App> logger) : IDisposable
 
             switch (packetType)
             {
-                case PacketType.Ping:
+                case MessageType.Ping:
                     _logger.LogInformation("[{name}] Received Ping from server", _name);
                     await SendPongAsync();
                     break;
 
-                case PacketType.LoginSuccess:
+                case MessageType.LoginSuccess:
                     ProcessLoginResponse(payload);
                     break;
 
-                case PacketType.ChatMessage:
+                case MessageType.ChatMessage:
                     ProcessChatMessage(payload);
                     break;
 

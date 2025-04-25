@@ -1,9 +1,10 @@
 using Microsoft.Extensions.Logging;
 
+using Common.Network;
 using Common.Network.Handler;
-using Common.Network.Packet;
 using Common.Network.Session;
 using Server.Chat.Users;
+
 
 namespace Server.Chat.Handler;
 
@@ -12,7 +13,7 @@ public class LogoutHandler(ILogger<LogoutHandler> logger, IUserManager userManag
     private readonly ILogger _logger = logger;
     private readonly IUserManager _userManager = userManager;
 
-    public PacketType PacketType => PacketType.Logout;
+    public MessageType Type => MessageType.Logout;
 
     public async Task<bool> HandleAsync(ISession session, ReadOnlyMemory<byte> packet)
     {

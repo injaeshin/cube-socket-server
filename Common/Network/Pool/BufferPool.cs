@@ -2,7 +2,7 @@
 using System.Runtime.InteropServices; // MemoryMarshal 사용
 using Microsoft.Extensions.Logging; // Logger 사용 시
 
-namespace Common.Network.Pool;
+namespace Common.Network.Session;
 
 public class BufferPool : IDisposable
 {

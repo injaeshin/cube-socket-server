@@ -1,6 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
-using Common.Network.Pool;
+using Common.Network.Session;
 using Microsoft.Extensions.Logging;
 
 namespace Common.Network;

@@ -4,7 +4,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 using Common.Network;
-using Common.Network.Pool;
 using Common.Network.Session;
 
 using Server.Chat.Users;
@@ -50,13 +49,16 @@ public class Program
 
                 // 사용자 관리
                 services.AddSingleton<IUserManager, UserManager>();
-                services.AddSingleton<ISessionManager, SessionManager_>();
+                services.AddSingleton<ISessionManager, SessionManager>();
 
                 // 핸들러 등록
                 services.AddTransient<ChatMessageHandler>();
 
                 // 비즈니스 로직 서비스 등록
                 services.AddTransient<App>();
+
+                // 팩토리 등록
+                services.AddSingleton<ILoggerFactoryHelper, LoggerFactoryHelper>();
             })
             .Build();
 
@@ -64,22 +66,32 @@ public class Program
         await app.RunAsync();
     }
 
-    public class App(IUserManager userManager, ISessionManager sessionManager, IPacketDispatcher packetDispatcher, ILoggerFactory loggerFactory)
+    public class App
     {
-        private readonly ILogger _logger = loggerFactory.CreateLogger<App>();
-        private readonly IUserManager _userManager = userManager;
-        private readonly IPacketDispatcher _packetDispatcher = packetDispatcher;
-        private readonly ISessionManager _sessionManager = sessionManager;
-        private readonly ILoggerFactory _loggerFactory = loggerFactory;
+        private readonly ILogger _logger;
+        private readonly IUserManager _userManager;
+        private readonly IPacketDispatcher _packetDispatcher;
+        private readonly ISessionManager _sessionManager;
+        private readonly ILoggerFactoryHelper _loggerHalper;
+
+        public App(IServiceProvider sp, ILoggerFactoryHelper loggerFactoryHelper)
+        {
+            _loggerHalper = loggerFactoryHelper;
+            _logger = _loggerHalper.CreateLogger<App>();
+
+            _userManager = sp.GetRequiredService<IUserManager>();
+            _sessionManager = sp.GetRequiredService<ISessionManager>();
+            _packetDispatcher = sp.GetRequiredService<IPacketDispatcher>();
+
+            RegisterPacketHandler(sp);
+        }
 
         public async Task RunAsync()
         {
             _logger.LogInformation("서버 시작 중...");
 
-            RegisterPacketHandler();
-
-            var acceptorLogger = _loggerFactory.CreateLogger<SocketAcceptor>();
-            var acceptor = new SocketAcceptor(acceptorLogger, OnClientConnected, Constant.PORT, Constant.MAX_LISTEN_CONNECTION);
+            var acceptorLogger = _loggerHalper.CreateLogger<SocketAcceptor>();
+            var acceptor = new SocketAcceptor(acceptorLogger, OnClientConnected, NetConsts.PORT, NetConsts.MAX_LISTEN_CONNECTION);
             await acceptor.Begin();
 
             _logger.LogInformation("서버가 실행 중입니다. 종료하려면 Enter 키를 누르세요.");
@@ -92,13 +104,11 @@ public class Program
             _sessionManager.End();
         }
 
-        private ILogger<T> CreateLogger<T>() => _loggerFactory.CreateLogger<T>();
-
-        private void RegisterPacketHandler()
+        private void RegisterPacketHandler(IServiceProvider sp)
         {
-            _packetDispatcher.Register(PacketType.Login, new LoginHandler(CreateLogger<LoginHandler>(), _userManager));
-            _packetDispatcher.Register(PacketType.Logout, new LogoutHandler(CreateLogger<LogoutHandler>(), _userManager));
-            _packetDispatcher.Register(PacketType.ChatMessage, new ChatMessageHandler(CreateLogger<ChatMessageHandler>()));
+            _packetDispatcher.Register(MessageType.Login, sp.GetRequiredService<LoginHandler>());
+            _packetDispatcher.Register(MessageType.Logout, sp.GetRequiredService<LogoutHandler>());
+            _packetDispatcher.Register(MessageType.ChatMessage, sp.GetRequiredService<ChatMessageHandler>());
         }
 
         private async Task OnClientConnected(Socket socket)

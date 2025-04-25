@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace Common.Network.Pool;
+namespace Common.Network.Session;
 
 public class ObjectPool<T> where T : class, IDisposable
 {

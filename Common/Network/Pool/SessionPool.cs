@@ -1,8 +1,6 @@
 using System.Collections.Concurrent;
 
-using Common.Network.Session;
-
-namespace Common.Network.Pool;
+namespace Common.Network.Session;
 
 public class SessionPool
 {
@@ -10,7 +8,7 @@ public class SessionPool
     private readonly ConcurrentDictionary<string, ISession> _sessions;
     public SessionPool(Func<ISession> factory)
     {
-        _pool = new(factory, Constant.MAX_CONNECTION);
+        _pool = new(factory, NetConsts.MAX_CONNECTION);
         _sessions = new ConcurrentDictionary<string, ISession>();
     }
 
@@ -40,7 +38,7 @@ public class SessionPool
 
     public bool IsMaxConnection()
     {
-        return _sessions.Count >= Constant.MAX_CONNECTION;
+        return _sessions.Count >= NetConsts.MAX_CONNECTION;
     }
 
     public void Close()

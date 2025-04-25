@@ -1,10 +1,10 @@
-﻿namespace Common.Network.Packet;
-
-// [ 2 bytes Length ][ 2 bytes Opcode ][ Payload... ]
+﻿// [ 2 bytes Length ][ 2 bytes MessageType ][ Payload... ]
 //       ↑                ↑
-//    ushort          PacketType (ushort enum)
+//    ushort          MessageType (ushort enum)
 
-public enum PacketType : ushort
+namespace Common.Network;
+
+public enum MessageType : ushort
 {
     None = 0x0000,
     Ping = 0x0001,

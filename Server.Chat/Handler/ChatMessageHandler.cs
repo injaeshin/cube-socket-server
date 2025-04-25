@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 
+using Common.Network;
 using Common.Network.Handler;
 using Common.Network.Packet;
 using Common.Network.Session;
@@ -11,7 +12,7 @@ public class ChatMessageHandler(ILogger<ChatMessageHandler> logger) : IPacketHan
 {
     private readonly ILogger _logger = logger;
 
-    public PacketType PacketType => PacketType.ChatMessage;
+    public MessageType Type => MessageType.ChatMessage;
 
     public async Task<bool> HandleAsync(ISession session, ReadOnlyMemory<byte> packet)
     {

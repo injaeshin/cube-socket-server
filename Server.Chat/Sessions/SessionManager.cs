@@ -1,10 +1,9 @@
+using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
 
+using Common.Network;
 using Common.Network.Session;
-using Common.Network.Pool;
-using Common.Network.Packet;
 using Common.Network.Handler;
-using System.Net.Sockets;
 
 namespace Server.Chat.Sessions;
 
@@ -15,24 +14,24 @@ public interface ISessionManager
     void End();
 }
 
-public class SessionManager_ : ISessionManager
+public class SessionManager : ISessionManager
 {
     private SessionPool _sessionPool = null!;
 
-    private readonly ILogger<SessionManager_> _logger;
+    private readonly ILogger<SessionManager> _logger;
+    private readonly ILoggerFactoryHelper _loggerFactoryHelper;
 
     private readonly IPacketDispatcher _packetDispatcher;
-    private readonly ILoggerFactory _loggerFactory;
     private readonly SocketEventArgsPool _receiveArgsPool;
     private readonly SessionHeartbeat _heartbeatMonitor;
     private CancellationTokenSource? _cts;
 
-    public SessionManager_(SocketEventArgsPool receiveArgsPool, ILoggerFactory loggerFactory,
+    public SessionManager(SocketEventArgsPool receiveArgsPool, ILoggerFactoryHelper loggerFactoryHelper,
                             SessionHeartbeat heartbeatMonitor, IPacketDispatcher packetDispatcher)
     {
-        _logger = loggerFactory.CreateLogger<SessionManager_>();
+        _loggerFactoryHelper = loggerFactoryHelper;
+        _logger = _loggerFactoryHelper.CreateLogger<SessionManager>();
 
-        _loggerFactory = loggerFactory;
         _receiveArgsPool = receiveArgsPool;
         _heartbeatMonitor = heartbeatMonitor;
         _packetDispatcher = packetDispatcher;
@@ -79,9 +78,7 @@ public class SessionManager_ : ISessionManager
             }
         };
 
-        var session = new ChatSession(_loggerFactory, _packetDispatcher, events);
-
-        return session;
+        return new ChatSession(_loggerFactoryHelper, _packetDispatcher, events);
     }
 
     public bool CreateSession(Socket socket)
@@ -122,7 +119,7 @@ public class SessionManager_ : ISessionManager
     {
         try
         {
-            if (!_packetDispatcher.TryGetHandler(PacketType.Logout, out var handler))
+            if (!_packetDispatcher.TryGetHandler(MessageType.Logout, out var handler))
             {
                 _logger.LogError("Logout 패킷 핸들러를 찾을 수 없습니다.");
                 return;

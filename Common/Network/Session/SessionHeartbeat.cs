@@ -144,7 +144,7 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
                 return;
             }
             
-            using var payload = new PacketWriter(PacketType.Ping);
+            using var payload = new PacketWriter(MessageType.Ping);
             await info.Session.SendAsync(payload.ToPacket());
 
             info.LastPingTime = DateTime.UtcNow;

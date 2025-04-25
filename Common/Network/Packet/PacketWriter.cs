@@ -20,7 +20,7 @@ public sealed class PacketWriter : IDisposable
     /// </summary>
     private int _position;
 
-    public PacketWriter(PacketType type) : this()
+    public PacketWriter(MessageType type) : this()
     {
         WriteType(type);
     }
@@ -37,7 +37,7 @@ public sealed class PacketWriter : IDisposable
     /// <summary>
     /// 패킷 타입 쓰기
     /// </summary>
-    public PacketWriter WriteType(PacketType type)
+    public PacketWriter WriteType(MessageType type)
     {
         _buffer[_position++] = (byte)((ushort)type >> 8);
         _buffer[_position++] = (byte)((ushort)type & 0xFF);

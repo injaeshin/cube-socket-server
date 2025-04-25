@@ -1,7 +1,7 @@
 ﻿using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
 
-namespace Common.Network.Pool;
+namespace Common.Network.Session;
 
 public class SocketEventArgsPool
 {
@@ -12,7 +12,7 @@ public class SocketEventArgsPool
     public int Count => _eventArgsPool.Count;
 
     // 기본 생성자 - 이전 버전과의 호환성을 위해 유지
-    public SocketEventArgsPool() : this(Constant.MAX_CONNECTION)
+    public SocketEventArgsPool() : this(NetConsts.MAX_CONNECTION)
     {
     }
 
@@ -20,7 +20,7 @@ public class SocketEventArgsPool
     public SocketEventArgsPool(int maxConnections, ILogger? logger = null)
     {
         _logger = logger;
-        _eventArgsBuffer = new BufferPool(maxConnections * Constant.BUFFER_SIZE, Constant.BUFFER_SIZE);
+        _eventArgsBuffer = new BufferPool(maxConnections * NetConsts.BUFFER_SIZE, NetConsts.BUFFER_SIZE);
         _eventArgsPool = new ObjectPool<SocketAsyncEventArgs>(() =>
         {
             var args = new SocketAsyncEventArgs();

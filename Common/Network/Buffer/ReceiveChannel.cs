@@ -1,7 +1,9 @@
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 
-namespace Common.Network.Transport;
+using Common.Network.Packet;
+
+namespace Common.Network.Buffer;
 
 public class ReceiveChannel
 {
