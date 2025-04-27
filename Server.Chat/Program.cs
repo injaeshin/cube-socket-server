@@ -6,11 +6,11 @@ using Microsoft.Extensions.Logging;
 using Common.Network;
 using Common.Network.Session;
 
-using Server.Chat.Users;
+using Server.Chat.User;
 using Server.Chat.Sessions;
 using Common.Network.Handler;
-using Common.Network.Packet;
 using Server.Chat.Handler;
+using Server.Chat.Helper;
 
 
 namespace Server;
@@ -25,21 +25,6 @@ public class Program
                 //config.SetBasePath(Directory.GetCurrentDirectory());
                 //config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
             })
-            .ConfigureLogging((context, logging) =>
-            {
-                logging.ClearProviders();
-                logging.SetMinimumLevel(LogLevel.Trace);
-                // 로그 출력 형식 설정 
-                logging.AddConsole(options =>
-                {
-                    options.FormatterName = "simple";
-                }).AddSimpleConsole(options =>
-                {
-                    options.TimestampFormat = "[HH:mm:ss] ";
-                    options.SingleLine = true;
-                    options.IncludeScopes = true;
-                });
-            })
             .ConfigureServices((context, services) =>
             {
                 // 공통 서비스
@@ -52,12 +37,14 @@ public class Program
                 services.AddSingleton<ISessionManager, SessionManager>();
 
                 // 핸들러 등록
+                services.AddTransient<LoginHandler>();
+                services.AddTransient<LogoutHandler>();
                 services.AddTransient<ChatMessageHandler>();
 
                 // 비즈니스 로직 서비스 등록
                 services.AddTransient<App>();
 
-                // 팩토리 등록
+                // 헬퍼 등록
                 services.AddSingleton<ILoggerFactoryHelper, LoggerFactoryHelper>();
             })
             .Build();
@@ -72,12 +59,10 @@ public class Program
         private readonly IUserManager _userManager;
         private readonly IPacketDispatcher _packetDispatcher;
         private readonly ISessionManager _sessionManager;
-        private readonly ILoggerFactoryHelper _loggerHalper;
 
-        public App(IServiceProvider sp, ILoggerFactoryHelper loggerFactoryHelper)
+        public App(IServiceProvider sp)
         {
-            _loggerHalper = loggerFactoryHelper;
-            _logger = _loggerHalper.CreateLogger<App>();
+            _logger = LoggerFactoryHelper.Instance.CreateLogger<App>();
 
             _userManager = sp.GetRequiredService<IUserManager>();
             _sessionManager = sp.GetRequiredService<ISessionManager>();
@@ -90,8 +75,8 @@ public class Program
         {
             _logger.LogInformation("서버 시작 중...");
 
-            var acceptorLogger = _loggerHalper.CreateLogger<SocketAcceptor>();
-            var acceptor = new SocketAcceptor(acceptorLogger, OnClientConnected, NetConsts.PORT, NetConsts.MAX_LISTEN_CONNECTION);
+            var acceptorLogger = LoggerFactoryHelper.Instance.CreateLogger<SocketAcceptor>();
+            var acceptor = new SocketAcceptor(acceptorLogger, OnClientConnected, NetConsts.PORT, NetConsts.MAX_CONNECTION, NetConsts.LISTEN_BACKLOG);
             await acceptor.Begin();
 
             _logger.LogInformation("서버가 실행 중입니다. 종료하려면 Enter 키를 누르세요.");

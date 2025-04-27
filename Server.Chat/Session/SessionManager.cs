@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Common.Network;
 using Common.Network.Session;
 using Common.Network.Handler;
+using Server.Chat.Helper;
 
 namespace Server.Chat.Sessions;
 
@@ -17,20 +18,15 @@ public interface ISessionManager
 public class SessionManager : ISessionManager
 {
     private SessionPool _sessionPool = null!;
-
     private readonly ILogger<SessionManager> _logger;
-    private readonly ILoggerFactoryHelper _loggerFactoryHelper;
-
     private readonly IPacketDispatcher _packetDispatcher;
     private readonly SocketEventArgsPool _receiveArgsPool;
     private readonly SessionHeartbeat _heartbeatMonitor;
     private CancellationTokenSource? _cts;
 
-    public SessionManager(SocketEventArgsPool receiveArgsPool, ILoggerFactoryHelper loggerFactoryHelper,
-                            SessionHeartbeat heartbeatMonitor, IPacketDispatcher packetDispatcher)
+    public SessionManager(SocketEventArgsPool receiveArgsPool, SessionHeartbeat heartbeatMonitor, IPacketDispatcher packetDispatcher)
     {
-        _loggerFactoryHelper = loggerFactoryHelper;
-        _logger = _loggerFactoryHelper.CreateLogger<SessionManager>();
+        _logger = LoggerFactoryHelper.Instance.CreateLogger<SessionManager>();
 
         _receiveArgsPool = receiveArgsPool;
         _heartbeatMonitor = heartbeatMonitor;
@@ -78,7 +74,7 @@ public class SessionManager : ISessionManager
             }
         };
 
-        return new ChatSession(_loggerFactoryHelper, _packetDispatcher, events);
+        return new ChatSession(_packetDispatcher, events);
     }
 
     public bool CreateSession(Socket socket)

@@ -5,12 +5,13 @@ using Common.Network.Handler;
 using Common.Network.Packet;
 using Common.Network.Session;
 using Common.Network.Message;
+using Server.Chat.Helper;
 
 namespace Server.Chat.Handler;
 
-public class ChatMessageHandler(ILogger<ChatMessageHandler> logger) : IPacketHandler
+public class ChatMessageHandler() : IPacketHandler
 {
-    private readonly ILogger _logger = logger;
+    private readonly ILogger _logger = LoggerFactoryHelper.Instance.CreateLogger<ChatMessageHandler>();
 
     public MessageType Type => MessageType.ChatMessage;
 

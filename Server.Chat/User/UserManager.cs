@@ -3,22 +3,22 @@ using Microsoft.Extensions.Logging;
 
 using Common.Network.Session;
 
-namespace Server.Chat.Users;
+namespace Server.Chat.User;
 
 public interface IUserManager
 {
     bool InsertUser(string username, ISession session);
     bool DeleteUser(string sessionId);
-    IUser? GetUserBySession(string sessionId);
-    IUser? GetUser(string userName);
-    IEnumerable<IUser> GetAllUsers();
+    IChatUser? GetUserBySession(string sessionId);
+    IChatUser? GetUser(string userName);
+    IEnumerable<IChatUser> GetAllUsers();
     bool IsAuthenticated(string sessionId);
     void End();
 }
 
 public class UserManager : IUserManager
 {
-    private readonly ConcurrentDictionary<string, IUser> _users = new();
+    private readonly ConcurrentDictionary<string, IChatUser> _users = new();
     private readonly ConcurrentDictionary<string, string> _sessionToUserMap = new();
     private readonly ILogger _logger;
 
@@ -44,7 +44,7 @@ public class UserManager : IUserManager
         }
 
         // 사용자 추가
-        var user = new User(username, session);
+        var user = new ChatUser(username, session);
         _users.TryAdd(username, user);
         _sessionToUserMap.TryAdd(session.SessionId, username);
 
@@ -72,7 +72,7 @@ public class UserManager : IUserManager
         return true;
     }
 
-    public IUser? GetUserBySession(string sessionId)
+    public IChatUser? GetUserBySession(string sessionId)
     {
         if (_sessionToUserMap.TryGetValue(sessionId, out var username))
         {
@@ -81,7 +81,7 @@ public class UserManager : IUserManager
         return null;
     }
 
-    public IUser? GetUser(string userName)
+    public IChatUser? GetUser(string userName)
     {
         if (!_users.TryGetValue(userName, out var user))
         {
@@ -91,7 +91,7 @@ public class UserManager : IUserManager
         return user;
     }
 
-    public IEnumerable<IUser> GetAllUsers()
+    public IEnumerable<IChatUser> GetAllUsers()
     {
         return _users.Values;
     }

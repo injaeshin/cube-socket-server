@@ -3,14 +3,14 @@ using Microsoft.Extensions.Logging;
 using Common.Network;
 using Common.Network.Handler;
 using Common.Network.Session;
-using Server.Chat.Users;
+using Server.Chat.User;
 
 
 namespace Server.Chat.Handler;
 
-public class LogoutHandler(ILogger<LogoutHandler> logger, IUserManager userManager) : IPacketHandler
+public class LogoutHandler(IUserManager userManager) : IPacketHandler
 {
-    private readonly ILogger _logger = logger;
+    private readonly ILogger _logger = LoggerFactoryHelper.Instance.CreateLogger<LogoutHandler>();
     private readonly IUserManager _userManager = userManager;
 
     public MessageType Type => MessageType.Logout;

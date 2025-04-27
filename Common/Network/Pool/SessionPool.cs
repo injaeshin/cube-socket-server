@@ -15,7 +15,7 @@ public class SessionPool
     public bool TryRent(out ISession session)
     {
         session = _pool.Rent();
-        session.CreateSessionId();
+        session.OnRent();
         if (!_sessions.TryAdd(session.SessionId, session))
         {
             _pool.Return(session);

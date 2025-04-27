@@ -1,6 +1,5 @@
 using System.Buffers;
 using System.Diagnostics;
-using Common.Network.Packet;
 
 namespace Common.Network.Buffer;
 

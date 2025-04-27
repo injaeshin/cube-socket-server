@@ -4,7 +4,7 @@ public class NetConsts
 {
     // 네트워크 설정
     public const int PORT = 7777;
-    public const int MAX_LISTEN_CONNECTION = 100;
+    public const int LISTEN_BACKLOG = 100;
     public const int MAX_CONNECTION = 1000;
 
     // 버퍼 크기

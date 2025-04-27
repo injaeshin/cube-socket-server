@@ -4,13 +4,14 @@ using Common.Network;
 using Common.Network.Handler;
 using Common.Network.Packet;
 using Common.Network.Session;
-using Server.Chat.Users;
+using Server.Chat.User;
+using Server.Chat.Helper;
 
 namespace Server.Chat.Handler;
 
-public class LoginHandler(ILogger<LoginHandler> logger, IUserManager userManager) : IPacketHandler
+public class LoginHandler(IUserManager userManager) : IPacketHandler
 {
-    private readonly ILogger _logger = logger;
+    private readonly ILogger _logger = LoggerFactoryHelper.Instance.CreateLogger<LoginHandler>();
     private readonly IUserManager _userManager = userManager;
 
     public MessageType Type => MessageType.Login;

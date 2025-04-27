@@ -13,6 +13,19 @@ public class SendChannel
     private Socket? _socket;
     private Task? _worker;
 
+    public void Run(Socket socket)
+    {
+        _sendBuffer.Reset();
+        _socket = socket;
+        _worker = Task.Run(WorkerAsync);
+    }
+
+    public void Stop()
+    {
+        _cts.Cancel();
+        _trigger.Writer.Complete();
+    }    
+
     public async Task EnqueueAsync(ReadOnlyMemory<byte> packet)
     {
         if (!_sendBuffer.TryAppend(packet))
@@ -26,7 +39,7 @@ public class SendChannel
         {
             await _trigger.Reader.ReadAsync(_cts.Token);
 
-            while (_sendBuffer.TryRead(1400, out var chunk, out var rentedBuffer))
+            while (_sendBuffer.TryRead(1024, out var chunk, out var rentedBuffer))
             {
                 try
                 {
@@ -40,19 +53,6 @@ public class SendChannel
                 }
             }
         }
-    }
-
-    public void Run(Socket socket)
-    {
-        _sendBuffer.Reset();
-        _socket = socket;
-        _worker = Task.Run(WorkerAsync);
-    }
-
-    public void Stop()
-    {
-        _cts.Cancel();
-        _trigger.Writer.Complete();
     }
 }
 

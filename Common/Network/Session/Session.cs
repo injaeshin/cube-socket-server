@@ -12,18 +12,21 @@ public interface ISession : IDisposable
     Socket Socket { get; }
     SocketAsyncEventArgs ReceiveArgs { get; }
     bool IsConnectionAlive();
-    void CreateSessionId();
+
+    void OnRent();
 
     void Run(Socket socket, SocketAsyncEventArgs receiveArgs);
     void Close(DisconnectReason reason = DisconnectReason.ApplicationRequest, bool force = false);
-    Task SendAsync(ReadOnlyMemory<byte> payload);
+    Task SendAsync(ReadOnlyMemory<byte> packet);
     Task OnProcessReceivedPacketAsync(ReceivedPacket packet);
 }
 
-public class Session(ILogger<Session> logger) : ISession, IDisposable
+public class Session(ILoggerFactory loggerFactory) : ISession, IDisposable
 {
-    private readonly ILogger _logger = logger;
+    private readonly ILogger _logger = loggerFactory.CreateLogger<Session>();
     private readonly PacketBuffer _receiveBuffer = new();
+    private readonly ReceiveChannel _recvChannel = new(loggerFactory.CreateLogger<ReceiveChannel>());
+    private readonly SendChannel _sendChannel = new();
     private Socket _socket = null!;
     public Socket Socket => _socket;
     private SocketAsyncEventArgs _receiveArgs = null!;
@@ -32,11 +35,16 @@ public class Session(ILogger<Session> logger) : ISession, IDisposable
     private string sessionId = string.Empty;
     public string SessionId => sessionId;
 
-    public void CreateSessionId()
+    private static string CreateSessionId()
     {
         string shortTime = DateTime.Now.ToString("HHmm");
         string randomPart = Guid.NewGuid().ToString("N")[..4];
-        sessionId = $"S_{shortTime}_{randomPart}";
+        return $"S_{shortTime}_{randomPart}";
+    }
+
+    public void OnRent()
+    {
+        sessionId = CreateSessionId();
     }
 
     public void Run(Socket socket, SocketAsyncEventArgs receiveArgs)
@@ -222,32 +230,43 @@ public class Session(ILogger<Session> logger) : ISession, IDisposable
         }
     }
 
-
     #region 이벤트 및 패킷 처리
     protected virtual void OnConnected(ISession session)
     {
-        _logger.LogInformation("세션 연결됨: {SessionId}", SessionId);
+        _logger.LogInformation("OnConnected: {SessionId}", SessionId);
+        _sendChannel.Run(Socket);
     }
     protected virtual void OnDisconnected(ISession session, DisconnectReason reason)
     {
-        _logger.LogInformation("세션 연결 끊김: {SessionId} - 이유: {Reason}", SessionId, reason);
+        _logger.LogInformation("OnDisconnected: {SessionId} - 이유: {Reason}", SessionId, reason);
+        _sendChannel.Stop();
     }
     protected virtual async Task OnPacketReceived(ReceivedPacket packet)
     {
-        _logger.LogInformation("패킷 처리: {SessionId}", SessionId);
+        _logger.LogInformation("OnPacketReceived: {SessionId}", SessionId);
         await Task.CompletedTask;
     }
     public virtual async Task OnProcessReceivedPacketAsync(ReceivedPacket packet)
     {
-        _logger.LogInformation("패킷 처리: {SessionId}", SessionId);
+        _logger.LogInformation("OnProcessReceivedPacketAsync: {SessionId}", SessionId);
         await Task.CompletedTask;
     }
-    public virtual async Task SendAsync(ReadOnlyMemory<byte> payload)
+    public virtual async Task SendAsync(ReadOnlyMemory<byte> packet)
     {
-        _logger.LogInformation("패킷 처리: {SessionId}", SessionId);
+        _logger.LogInformation("SendAsync: {SessionId}", SessionId);
         await Task.CompletedTask;
     }
     #endregion
+
+    protected async Task EnqueueSendAsync(ReadOnlyMemory<byte> packet)
+    {
+        await _sendChannel.EnqueueAsync(packet);
+    }
+
+    protected async Task EnqueueRecvAsync(ReceivedPacket packet)
+    {
+        await _recvChannel.EnqueueAsync(packet);
+    }
 
     #region 소켓 설정 및 유틸리티
     private static void ConfigureKeepAlive(Socket socket)

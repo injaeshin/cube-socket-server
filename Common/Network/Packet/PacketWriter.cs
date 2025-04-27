@@ -31,7 +31,7 @@ public sealed class PacketWriter : IDisposable
     public PacketWriter(int size = 2048)
     {
         _buffer = ArrayPool<byte>.Shared.Rent(size);
-        _position = 0;
+        _position = 2;
     }
 
     /// <summary>
@@ -41,6 +41,15 @@ public sealed class PacketWriter : IDisposable
     {
         _buffer[_position++] = (byte)((ushort)type >> 8);
         _buffer[_position++] = (byte)((ushort)type & 0xFF);
+        return this;
+    }
+
+    public PacketWriter WriteInt(int value)
+    {
+        _buffer[_position++] = (byte)(value >> 24);
+        _buffer[_position++] = (byte)(value >> 16);
+        _buffer[_position++] = (byte)(value >> 8);
+        _buffer[_position++] = (byte)(value & 0xFF);
         return this;
     }
 
@@ -80,13 +89,10 @@ public sealed class PacketWriter : IDisposable
     /// </summary>
     public ReadOnlyMemory<byte> ToPacket()
     {
-        // Length = Type(2) + Message
-        ushort length = (ushort)_position;
-        var packet = new byte[2 + length];
-        packet[0] = (byte)(length >> 8);
-        packet[1] = (byte)(length & 0xFF);
-        Array.Copy(_buffer, 0, packet, 2, length);
-        return packet;
+        ushort length = (ushort)(_position - 2);
+        _buffer[0] = (byte)(length >> 8);
+        _buffer[1] = (byte)(length & 0xFF);
+        return new ReadOnlyMemory<byte>(_buffer, 0, _position);
     }
 
     /// <summary>

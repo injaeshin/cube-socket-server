@@ -40,7 +40,7 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
                 _logger.LogError(ex, "Error stopping session heartbeat monitor");
             }
         }
-        
+
         _cts.Dispose();
         _logger.LogInformation("Session heartbeat monitor stopped");
     }
@@ -143,7 +143,7 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
                 UnregisterSession(info.Session.SessionId);
                 return;
             }
-            
+
             using var payload = new PacketWriter(MessageType.Ping);
             await info.Session.SendAsync(payload.ToPacket());
 

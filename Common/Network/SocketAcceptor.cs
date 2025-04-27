@@ -17,7 +17,7 @@ public class SocketAcceptor
 
     private bool _isStopped = false;
 
-    public SocketAcceptor(ILogger<SocketAcceptor> logger, Func<Socket, Task> onConnected, int port, int maxConnections)
+    public SocketAcceptor(ILogger<SocketAcceptor> logger, Func<Socket, Task> onConnected, int port, int maxConnections, int listenBacklog)
     {
         _logger = logger;
         _onClientConnected = onConnected;
@@ -28,7 +28,7 @@ public class SocketAcceptor
 
         _listenSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         _listenSocket.Bind(new IPEndPoint(IPAddress.Any, port));
-        _listenSocket.Listen(maxConnections);
+        _listenSocket.Listen(listenBacklog);
     }
 
     public async Task Begin()
