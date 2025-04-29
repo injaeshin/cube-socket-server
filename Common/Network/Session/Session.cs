@@ -254,7 +254,7 @@ public class Session(ILoggerFactory loggerFactory) : ISession, IDisposable
     public virtual async Task SendAsync(ReadOnlyMemory<byte> packet)
     {
         _logger.LogInformation("SendAsync: {SessionId}", SessionId);
-        await Task.CompletedTask;
+        await _sendChannel.EnqueueAsync(packet);
     }
     #endregion
 

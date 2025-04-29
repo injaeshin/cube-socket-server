@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Common.Network;
+using Common.Network.Message;
 using Common.Network.Packet;
 using Server.Chat.User;
 
@@ -94,10 +95,10 @@ public class ChatChannel(int channelId, string channelName)
         }
     }
 
-    public async Task SendMessageToAll(string sender, string message)
+    public async Task SendMessageToAll(ChatMessage message)
     {
         using var packet = new PacketWriter();
-        PacketWriteMessage(packet, sender, message);
+        PacketWriteMessage(packet, message.Sender, message.Message);
 
         foreach (var member in _members.Values)
         {

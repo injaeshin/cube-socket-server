@@ -7,7 +7,7 @@ namespace Server.Chat.User;
 
 public interface IUserManager
 {
-    bool InsertUser(string username, ISession session);
+    bool TryInsertUser(string username, ISession session, out IChatUser? user);
     bool DeleteUser(string sessionId);
     IChatUser? GetUserBySession(string sessionId);
     IChatUser? GetUser(string userName);
@@ -27,8 +27,9 @@ public class UserManager : IUserManager
         _logger = logger;
     }
 
-    public bool InsertUser(string username, ISession session)
+    public bool TryInsertUser(string username, ISession session, out IChatUser? user)
     {
+        user = null;
         // 이미 로그인한 사용자인지 확인
         if (_users.ContainsKey(username))
         {
@@ -44,7 +45,7 @@ public class UserManager : IUserManager
         }
 
         // 사용자 추가
-        var user = new ChatUser(username, session);
+        user = new ChatUser(username, session);
         _users.TryAdd(username, user);
         _sessionToUserMap.TryAdd(session.SessionId, username);
 
@@ -99,6 +100,11 @@ public class UserManager : IUserManager
     public bool IsAuthenticated(string sessionId)
     {
         return _sessionToUserMap.ContainsKey(sessionId);
+    }
+
+    ~UserManager()
+    {
+        End();
     }
 
     public void End()

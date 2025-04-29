@@ -7,7 +7,7 @@ using Common.Network;
 using Common.Network.Session;
 
 using Server.Chat.User;
-using Server.Chat.Sessions;
+using Server.Chat.Session;
 using Common.Network.Handler;
 using Server.Chat.Handler;
 using Server.Chat.Helper;
@@ -27,25 +27,8 @@ public class Program
             })
             .ConfigureServices((context, services) =>
             {
-                // 공통 서비스
-                services.AddSingleton<SessionHeartbeat>();
-                services.AddSingleton<SocketEventArgsPool>();
-                services.AddSingleton<IPacketDispatcher, PacketDispatcher>();
-
-                // 사용자 관리
-                services.AddSingleton<IUserManager, UserManager>();
-                services.AddSingleton<ISessionManager, SessionManager>();
-
-                // 핸들러 등록
-                services.AddTransient<LoginHandler>();
-                services.AddTransient<LogoutHandler>();
-                services.AddTransient<ChatMessageHandler>();
-
-                // 비즈니스 로직 서비스 등록
+                ServiceRegister.RegisterServices(services);
                 services.AddTransient<App>();
-
-                // 헬퍼 등록
-                services.AddSingleton<ILoggerFactoryHelper, LoggerFactoryHelper>();
             })
             .Build();
 
@@ -60,15 +43,15 @@ public class Program
         private readonly IPacketDispatcher _packetDispatcher;
         private readonly ISessionManager _sessionManager;
 
-        public App(IServiceProvider sp)
+        public App(IObjectFactoryHelper objectFactory)
         {
             _logger = LoggerFactoryHelper.Instance.CreateLogger<App>();
 
-            _userManager = sp.GetRequiredService<IUserManager>();
-            _sessionManager = sp.GetRequiredService<ISessionManager>();
-            _packetDispatcher = sp.GetRequiredService<IPacketDispatcher>();
+            _userManager = objectFactory.Create<IUserManager>();
+            _sessionManager = objectFactory.Create<ISessionManager>();
+            _packetDispatcher = objectFactory.Create<IPacketDispatcher>();
 
-            RegisterPacketHandler(sp);
+            RegisterPacketHandler(objectFactory);
         }
 
         public async Task RunAsync()
@@ -89,11 +72,11 @@ public class Program
             _sessionManager.End();
         }
 
-        private void RegisterPacketHandler(IServiceProvider sp)
+        private void RegisterPacketHandler(IObjectFactoryHelper objectFactory)
         {
-            _packetDispatcher.Register(MessageType.Login, sp.GetRequiredService<LoginHandler>());
-            _packetDispatcher.Register(MessageType.Logout, sp.GetRequiredService<LogoutHandler>());
-            _packetDispatcher.Register(MessageType.ChatMessage, sp.GetRequiredService<ChatMessageHandler>());
+            _packetDispatcher.Register(MessageType.Login, objectFactory.Create<LoginHandler>());
+            _packetDispatcher.Register(MessageType.Logout, objectFactory.Create<LogoutHandler>());
+            _packetDispatcher.Register(MessageType.ChatMessage, objectFactory.Create<ChatMessageHandler>());
         }
 
         private async Task OnClientConnected(Socket socket)

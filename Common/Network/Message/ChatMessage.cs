@@ -10,24 +10,17 @@ namespace Common.Network.Message
         /// <summary>
         /// 메시지 발신자
         /// </summary>
-        public string Sender { get; set; }
+        public string Sender { get; init; }
 
         /// <summary>
         /// 메시지 내용
         /// </summary>
-        public string Message { get; set; }
+        public string Message { get; init; }
 
         public ChatMessage(string sender, string message)
         {
             Sender = sender;
             Message = message;
-        }
-
-        public static ChatMessage Create(ref PacketReader reader)
-        {
-            string sender = reader.ReadString();
-            string message = reader.ReadString();
-            return new ChatMessage(sender, message);
         }
 
         // 디버깅을 위한 오버라이드

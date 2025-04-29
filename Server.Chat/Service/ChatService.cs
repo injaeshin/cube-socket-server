@@ -1,37 +1,105 @@
 
 using System.Collections.Concurrent;
+using Common.Network.Message;
+using Common.Network.Session;
 using Microsoft.Extensions.Logging;
 using Server.Chat.Channel;
 using Server.Chat.Helper;
+using Server.Chat.User;
 
-namespace Server.Chat.Services;
+namespace Server.Chat.Service;
 
-public class ChatService
+public interface IChatService
+{
+    Task<bool> AddUser(string userName, ISession session);
+    Task<bool> DeleteUser(string sessionId);
+    Task<bool> JoinChannel(int channelId, IChatUser user);
+    Task<bool> LeaveChannel(int channelId, IChatUser user);
+
+    bool TryGetUserBySession(string sessionId, out IChatUser? user);
+    Task SendChatMessageToChannel(int channelId, ChatMessage message);
+}
+
+public class ChatService : IChatService
 {
     private readonly ILogger _logger = LoggerFactoryHelper.Instance.CreateLogger<ChatService>();
     private readonly ConcurrentDictionary<int, ChatChannel> _channels = new();
+    private readonly IUserManager _userManager;
 
-    public ChatService()
+    public ChatService(IUserManager userManager)
     {
+        _userManager = userManager;
+        _channels.TryAdd(1, new ChatChannel(1, "General"));
     }
 
-    public bool CreateChannel(int channelId, string channelName)
+    public async Task<bool> AddUser(string userName, ISession session)
     {
-        return _channels.TryAdd(channelId, new ChatChannel(channelId, channelName));
+        if (!_userManager.TryInsertUser(userName, session, out var user))
+        {
+            return false;
+        }
+
+        if (!await JoinChannel(1, user!))
+        {
+            _logger.LogError("Failed to join channel: {ChannelId}", 1);
+            _userManager.DeleteUser(session.SessionId);
+            return false;
+        }
+
+        return true;
     }
 
-    public bool RemoveChannel(int channelId)
+    public async Task<bool> DeleteUser(string sessionId)
     {
-        return _channels.TryRemove(channelId, out _);
+        var user = _userManager.GetUserBySession(sessionId);
+        if (user == null)
+        {
+            _logger.LogError("Failed to delete user: {SessionId}", sessionId);
+            return false;
+        }
+
+        if (!_userManager.DeleteUser(sessionId))
+        {
+            _logger.LogError("Failed to delete user: {SessionId}", sessionId);
+            return false;
+        }
+
+        await LeaveChannel(1, user);
+
+        return true;
     }
 
-    public ChatChannel? GetChannel(int channelId)
+    public async Task<bool> JoinChannel(int channelId, IChatUser user)
     {
-        return _channels.TryGetValue(channelId, out var channel) ? channel : null;
+        if (!_channels.TryGetValue(channelId, out var channel))
+        {
+            return false;
+        }
+
+        return await channel.TryAddMember(user);
     }
 
-    public IEnumerable<ChatChannel> GetAllChannels()
+    public async Task<bool> LeaveChannel(int channelId, IChatUser user)
     {
-        return _channels.Values;
+        if (!_channels.TryGetValue(channelId, out var channel))
+        {
+            return false;
+        }
+
+        return await channel.TryRemoveMember(user);
+    }
+
+    public bool TryGetUserBySession(string sessionId, out IChatUser? user)
+    {
+        user = _userManager.GetUserBySession(sessionId);
+        return user != null;
+    }
+
+    public async Task SendChatMessageToChannel(int channelId, ChatMessage message)
+    {
+        if (_channels.TryGetValue(channelId, out var channel))
+        {
+            await channel.SendMessageToAll(message);
+        }
     }
 }

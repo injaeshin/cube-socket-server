@@ -6,9 +6,9 @@ using Common.Network.Packet;
 using Common.Network.Handler;
 using Server.Chat.Helper;
 
-namespace Server.Chat.Sessions;
+namespace Server.Chat.Session;
 
-public class ChatSession(IPacketDispatcher packetDispatcher, SessionEvents events) : Session(LoggerFactoryHelper.Instance.GetLoggerFactory()), ISession
+public class ChatSession(IPacketDispatcher packetDispatcher, SessionEvents events) : Common.Network.Session.Session(LoggerFactoryHelper.Instance.GetLoggerFactory()), ISession
 {
     private readonly ILogger _logger = LoggerFactoryHelper.Instance.CreateLogger<ChatSession>();
     private readonly SessionEvents _events = events;
@@ -63,9 +63,8 @@ public class ChatSession(IPacketDispatcher packetDispatcher, SessionEvents event
         await handler.HandleAsync(this, packet.Data);
     }
 
-    public override async Task SendAsync(ReadOnlyMemory<byte> packet)
-    {
-        await base.SendAsync(packet);
-        await EnqueueSendAsync(packet);
-    }
+    // public override async Task SendAsync(ReadOnlyMemory<byte> packet)
+    // {
+    //     await base.SendAsync(packet);
+    // }
 }

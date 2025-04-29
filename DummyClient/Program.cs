@@ -1,20 +1,13 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Hosting;
-
 using __DummyClient;
 
 var host = Host.CreateDefaultBuilder(args)
-    .ConfigureAppConfiguration((context, config) =>
-    {
-        //config.SetBasePath(Directory.GetCurrentDirectory());
-        //config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
-    })
     .ConfigureLogging((context, logging) =>
     {
         logging.ClearProviders();
         logging.SetMinimumLevel(LogLevel.Trace);
-        // 로그 출력 형식 설정 
         logging.AddConsole(options =>
         {
             options.FormatterName = "simple";
@@ -28,21 +21,28 @@ var host = Host.CreateDefaultBuilder(args)
     .ConfigureServices((context, services) =>
     {
         services.AddTransient<App>();
+        services.AddTransient(typeof(ILogger<DummyClient>), sp =>
+        {
+            var factory = sp.GetRequiredService<ILoggerFactory>();
+            return factory.CreateLogger<DummyClient>();
+        });
     })
     .Build();
 
-int clientCount = 1;
-var clients = new List<Task>();
+// 파라미터 입력 (기본값: 10명, 30초)
+int clientCount = 10;
+int durationSec = 30;
 
-for (int i = 0; i < clientCount; i++)
-{
-    var client = host.Services.GetRequiredService<App>();
-    clients.Add(client.RunAsync());
-}
+Console.WriteLine($"동시 접속 클라이언트 수 입력 (기본: {clientCount}): ");
+var input = Console.ReadLine();
+if (int.TryParse(input, out var cc) && cc > 0) clientCount = cc;
+Console.WriteLine($"시뮬레이션 시간(초) 입력 (기본: {durationSec}): ");
+input = Console.ReadLine();
+if (int.TryParse(input, out var ds) && ds > 0) durationSec = ds;
 
-await Task.WhenAll(clients);
+var app = host.Services.GetRequiredService<App>();
+await app.RunSimulationAsync(clientCount, durationSec);
 
-// This line may be redundant if you're already running multiple clients above
-// var app = host.Services.GetRequiredService<App>();
-// await app.RunAsync();
+Console.WriteLine("시뮬레이션 종료. 아무 키나 누르세요...");
+Console.ReadKey();
 

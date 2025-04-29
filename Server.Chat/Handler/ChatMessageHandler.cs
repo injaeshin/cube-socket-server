@@ -6,12 +6,14 @@ using Common.Network.Packet;
 using Common.Network.Session;
 using Common.Network.Message;
 using Server.Chat.Helper;
+using Server.Chat.Service;
 
 namespace Server.Chat.Handler;
 
-public class ChatMessageHandler() : IPacketHandler
+public class ChatMessageHandler(IChatService chatService) : IPacketHandler
 {
     private readonly ILogger _logger = LoggerFactoryHelper.Instance.CreateLogger<ChatMessageHandler>();
+    private readonly IChatService _chatService = chatService;
 
     public MessageType Type => MessageType.ChatMessage;
 
@@ -23,21 +25,20 @@ public class ChatMessageHandler() : IPacketHandler
             _logger.LogDebug("Chat packet raw data: {HexDump}, Length: {Length}", 
                 BitConverter.ToString(packet.ToArray()), packet.Length);
 
-            try
+            if (!_chatService.TryGetUserBySession(session.SessionId, out var user))
             {
-                var reader = new PacketReader(packet);
-                var chatMessage = ChatMessage.Create(ref reader);
-                _logger.LogInformation("ChatMessage: {Message} from {Sender}, Position after read: {Position}", 
-                    chatMessage.Message, chatMessage.Sender, reader.Position);
-
-                //await _chatService.SendChatMessageToAll(chatMessage);
-                await Task.Delay(10);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error parsing chat message at position");
+                _logger.LogError("User not found for session: {SessionId}", session.SessionId);
+                session.Close(DisconnectReason.ApplicationRequest);
                 return false;
             }
+
+            var reader = new PacketReader(packet);
+            var chatMessage = new ChatMessage(user!.Name, reader.ReadString());
+            _logger.LogInformation("ChatMessage: {Message} from {Sender}, Position after read: {Position}", 
+                chatMessage.Message, chatMessage.Sender, reader.Position);
+
+            await _chatService.SendChatMessageToChannel(1, chatMessage);
+            await Task.Delay(10);
         }
         catch (Exception ex)
         {

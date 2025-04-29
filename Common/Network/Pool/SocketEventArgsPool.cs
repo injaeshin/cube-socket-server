@@ -1,13 +1,15 @@
 ﻿using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
+using System;
 
 namespace Common.Network.Session;
 
-public class SocketEventArgsPool
+public class SocketEventArgsPool : IDisposable
 {
     private readonly BufferPool _eventArgsBuffer;
     private readonly ObjectPool<SocketAsyncEventArgs> _eventArgsPool;
     private readonly ILogger? _logger;
+    private bool _disposed = false;
 
     public int Count => _eventArgsPool.Count;
 
@@ -90,8 +92,29 @@ public class SocketEventArgsPool
 
     public void Close()
     {
-        _eventArgsBuffer.Close();
-        _eventArgsPool.Close();
-        _logger?.LogInformation("SocketEventArgsPool 정리 완료");
+        Dispose();
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed) return;
+        if (disposing)
+        {
+            _eventArgsBuffer?.Dispose();
+            _eventArgsPool?.Dispose();
+            _logger?.LogInformation("SocketEventArgsPool 정리 완료");
+        }
+        _disposed = true;
+    }
+
+    ~SocketEventArgsPool()
+    {
+        Dispose(false);
     }
 }

@@ -20,7 +20,7 @@ public class PacketBuffer
 
         int remainLength = data.Length - firstCopyLength;
         if (remainLength > 0)
-            data[firstCopyLength..].CopyTo(_buffer.AsSpan(0));
+            data[firstCopyLength..].CopyTo(_buffer.AsSpan(0, remainLength));
 
         _writePos = (_writePos + data.Length) % NetConsts.PACKET_BUFFER_SIZE;
         return true;
@@ -84,23 +84,21 @@ public class PacketBuffer
         return (ushort)(_buffer[realOffset] << 8 | _buffer[nextOffset]);
     }
 
-    private bool TryPeekUShort(out ushort value)
-    {
-        value = 0;
-
-        if (DataSize() < 2)
-            return false;
-
-        value = ReadUInt16FromBuffer(0);
-        return true;
-    }
+    // private bool TryPeekUShort(out ushort value)
+    // {
+    //     value = 0;
+    //     if (DataSize() < 2)
+    //         return false;
+    //     value = ReadUInt16FromBuffer(0);
+    //     return true;
+    // }
 
     public void Skip(int count)
     {
         _readPos = (_readPos + count) % NetConsts.PACKET_BUFFER_SIZE;
     }
 
-    private int FreeSize()
+    public int FreeSize()
     {
         if (_writePos >= _readPos)
             return NetConsts.PACKET_BUFFER_SIZE - (_writePos - _readPos) - 1;
@@ -108,7 +106,7 @@ public class PacketBuffer
         return _readPos - _writePos - 1;
     }
 
-    private int DataSize()
+    public int DataSize()
     {
         if (_writePos >= _readPos)
             return _writePos - _readPos;

@@ -4,15 +4,15 @@ using Common.Network;
 using Common.Network.Handler;
 using Common.Network.Packet;
 using Common.Network.Session;
-using Server.Chat.User;
 using Server.Chat.Helper;
+using Server.Chat.Service;
 
 namespace Server.Chat.Handler;
 
-public class LoginHandler(IUserManager userManager) : IPacketHandler
+public class LoginHandler(IChatService chatService) : IPacketHandler
 {
     private readonly ILogger _logger = LoggerFactoryHelper.Instance.CreateLogger<LoginHandler>();
-    private readonly IUserManager _userManager = userManager;
+    private readonly IChatService _chatService = chatService;
 
     public MessageType Type => MessageType.Login;
 
@@ -67,7 +67,7 @@ public class LoginHandler(IUserManager userManager) : IPacketHandler
                 string.Join(" ", System.Text.Encoding.UTF8.GetBytes(id).Select(b => b.ToString("X2"))));
 
             //사용자 등록
-            if (!_userManager.InsertUser(id, session))
+            if (!await _chatService.AddUser(id, session))
             {
                 _logger.LogError("Failed to insert user: {SessionId}", session.SessionId);
                 return false;

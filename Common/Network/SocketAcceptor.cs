@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Common.Network;
 
-public class SocketAcceptor
+public class SocketAcceptor : IDisposable
 {
     private readonly Func<Socket, Task> _onClientConnected;
     private readonly ILogger<SocketAcceptor> _logger;
@@ -16,6 +16,7 @@ public class SocketAcceptor
     private readonly int _maxConnections;
 
     private bool _isStopped = false;
+    private bool _disposed = false;
 
     public SocketAcceptor(ILogger<SocketAcceptor> logger, Func<Socket, Task> onConnected, int port, int maxConnections, int listenBacklog)
     {
@@ -39,11 +40,31 @@ public class SocketAcceptor
 
     public void End()
     {
-        _isStopped = true;
-        _listenSocket?.Close();
-        _argsPool.Close();
+        Dispose();
+    }
 
-        _logger.LogInformation("소켓 리스너 종료됨");
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed) return;
+        if (disposing)
+        {
+            _isStopped = true;
+            _listenSocket?.Close();
+            _argsPool?.Close();
+            _logger.LogInformation("소켓 리스너 종료됨");
+        }
+        _disposed = true;
+    }
+
+    ~SocketAcceptor()
+    {
+        Dispose(false);
     }
 
     private void RunAcceptAsync()

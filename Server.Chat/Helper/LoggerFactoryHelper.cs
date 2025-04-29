@@ -6,6 +6,7 @@ public interface ILoggerFactoryHelper
 {
     ILogger<T> CreateLogger<T>();
     ILogger CreateLogger(string categoryName);
+    ILoggerFactory GetLoggerFactory();
 }
 
 internal class LoggerFactoryHelper : ILoggerFactoryHelper
@@ -20,7 +21,7 @@ internal class LoggerFactoryHelper : ILoggerFactoryHelper
         _loggerFactory = LoggerFactory.Create(builder =>
         {
             builder.ClearProviders();
-            builder.SetMinimumLevel(LogLevel.Trace);
+            builder.SetMinimumLevel(LogLevel.Debug);
             // 로그 출력 형식 설정 
             builder.AddConsole(options =>
             {

@@ -6,7 +6,7 @@ using Common.Network.Session;
 using Common.Network.Handler;
 using Server.Chat.Helper;
 
-namespace Server.Chat.Sessions;
+namespace Server.Chat.Session;
 
 public interface ISessionManager
 {
