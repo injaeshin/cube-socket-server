@@ -3,12 +3,12 @@ namespace Common.Network.Session;
 
 public class SessionResource
 {
-    public required Action<ISession> OnReturnSession;
+    public required Action<INetSession> OnReturnSession;
 }
 
 public class SessionKeepAlive
 {
-    public required Action<ISession> OnRegister;
+    public required Action<INetSession> OnRegister;
     public required Action<string> OnUnregister;
     public required Action<string> OnUpdate;
 }

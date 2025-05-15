@@ -45,7 +45,7 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
         _logger.LogInformation("Session heartbeat monitor stopped");
     }
 
-    public void RegisterSession(ISession session)
+    public void RegisterSession(INetSession session)
     {
         _sessions[session.SessionId] = new SessionInfo
         {
@@ -55,7 +55,7 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
             State = SessionState.Active,
         };
 
-        _logger.LogDebug("Session {sessionId} registered", session.SessionId);
+        _logger.LogInformation("Session {sessionId} registered", session.SessionId);
     }
 
     public void UnregisterSession(string sessionId)
@@ -65,7 +65,7 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
             _logger.LogError("Session {sessionId} not found", sessionId);
         }
 
-        _logger.LogDebug("Session {sessionId} unregistered", sessionId);
+        _logger.LogInformation("Session {sessionId} unregistered", sessionId);
     }
 
     public void UpdateSessionActivity(string sessionId)
@@ -149,7 +149,7 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
 
             info.LastPingTime = DateTime.UtcNow;
             info.State = SessionState.PingSent;
-            _logger.LogDebug("Sent ping to session {sessionId}", info.Session.SessionId);
+            _logger.LogInformation("Sent ping to session {sessionId}", info.Session.SessionId);
         }
         catch (Exception ex)
         {
@@ -162,7 +162,7 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
     {
         try
         {
-            _logger.LogDebug("Closing timeout session {sessionId}", sessionId);
+            _logger.LogInformation("Closing timeout session {sessionId}", sessionId);
             info.Session.Close(DisconnectReason.Timeout);
         }
         catch (Exception ex)
@@ -177,7 +177,7 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
 
     private class SessionInfo
     {
-        public ISession Session { get; init; } = null!;
+        public INetSession Session { get; init; } = null!;
         public DateTime LastActivity { get; set; }
         public DateTime LastPingTime { get; set; }
         public SessionState State { get; set; }

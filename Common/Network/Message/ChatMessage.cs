@@ -1,4 +1,3 @@
-using Common.Network.Packet;
 
 namespace Common.Network.Message
 {

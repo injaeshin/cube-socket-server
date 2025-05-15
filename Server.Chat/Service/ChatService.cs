@@ -11,7 +11,7 @@ namespace Server.Chat.Service;
 
 public interface IChatService
 {
-    Task<bool> AddUser(string userName, ISession session);
+    Task<bool> AddUser(string userName, INetSession session);
     Task<bool> DeleteUser(string sessionId);
     Task<bool> JoinChannel(int channelId, IChatUser user);
     Task<bool> LeaveChannel(int channelId, IChatUser user);
@@ -22,7 +22,7 @@ public interface IChatService
 
 public class ChatService : IChatService
 {
-    private readonly ILogger _logger = LoggerFactoryHelper.Instance.CreateLogger<ChatService>();
+    private readonly ILogger _logger = LoggerFactoryHelper.CreateLogger<ChatService>();
     private readonly ConcurrentDictionary<int, ChatChannel> _channels = new();
     private readonly IUserManager _userManager;
 
@@ -32,8 +32,10 @@ public class ChatService : IChatService
         _channels.TryAdd(1, new ChatChannel(1, "General"));
     }
 
-    public async Task<bool> AddUser(string userName, ISession session)
+    public async Task<bool> AddUser(string userName, INetSession session)
     {
+        _logger.LogDebug("Adding user: {UserName}, SessionId: {SessionId}", userName, session.SessionId);
+
         if (!_userManager.TryInsertUser(userName, session, out var user))
         {
             return false;

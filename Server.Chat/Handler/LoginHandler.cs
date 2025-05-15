@@ -3,75 +3,52 @@ using Microsoft.Extensions.Logging;
 using Common.Network;
 using Common.Network.Handler;
 using Common.Network.Packet;
-using Common.Network.Session;
 using Server.Chat.Helper;
 using Server.Chat.Service;
+using Common.Network.Session;
 
 namespace Server.Chat.Handler;
 
 public class LoginHandler(IChatService chatService) : IPacketHandler
 {
-    private readonly ILogger _logger = LoggerFactoryHelper.Instance.CreateLogger<LoginHandler>();
+    private readonly ILogger _logger = LoggerFactoryHelper.CreateLogger<LoginHandler>();
     private readonly IChatService _chatService = chatService;
 
     public MessageType Type => MessageType.Login;
 
-    public async Task<bool> HandleAsync(ISession session, ReadOnlyMemory<byte> packet)
+    public async Task<bool> HandleAsync(INetSession session, ReadOnlyMemory<byte> packet)
     {
+        if (session.IsAuthenticated)
+        {
+            _logger.LogError("Login packet received from authenticated session: {SessionId}", session.SessionId);
+            session.Close(DisconnectReason.NotAuthorized);
+            return false;
+        }
+
         try
         {
-            // 원시 패킷 데이터 로깅
-            _logger.LogDebug("Login packet raw data: {HexDump}, Length: {Length}", 
-                BitConverter.ToString(packet.ToArray()), packet.Length);
-            
+            //_logger.LogDebug("Login packet raw data: {HexDump}, Length: {Length}",
+            //    BitConverter.ToString(packet.ToArray()), packet.Length);
+
             var reader = new PacketReader(packet);
-            // 패킷 페이로드 길이 검증
             if (reader.RemainingLength < 2)
             {
                 _logger.LogError("Login packet does not contain string length field: {RemainingLength} bytes", reader.RemainingLength);
                 return false;
             }
 
-            //// 먼저 문자열 길이를 검사
-            //var stringLengthPos = reader.Position;
-            //var stringLength = reader.ReadUInt16();
-            
-            //_logger.LogDebug("Login string length: {StringLength}, remaining bytes: {RemainingBytes}, Position: {Position}", 
-            //    stringLength, reader.RemainingLength, reader.Position);
-            
-            //if (stringLength > 100) // 최대 길이 제한 설정
-            //{
-            //    _logger.LogError("Login string too long: {StringLength} bytes", stringLength);
-            //    return false;
-            //}
-            
-            //if (reader.RemainingLength < stringLength)
-            //{
-            //    _logger.LogError("Login string length ({StringLength}) exceeds remaining packet size ({RemainingLength})", 
-            //        stringLength, reader.RemainingLength);
-                
-            //    // 디버깅을 위한 패킷 덤프
-            //    _logger.LogDebug("Packet dump: {HexDump}", BitConverter.ToString(packet.ToArray()));
-            //    return false;
-            //}
-
-            //// 남은 모든 바이트 데이터 로깅
-            //var remainingBytes = new byte[reader.RemainingLength];
-            //packet.Slice(reader.Position).CopyTo(new Memory<byte>(remainingBytes));
-            //_logger.LogDebug("Remaining bytes: {HexDump}", BitConverter.ToString(remainingBytes));
-
-            //// 위치 복원하고 문자열 읽기
-            //reader.Seek(stringLengthPos);
             var id = reader.ReadString();
-            _logger.LogInformation("Login: {Id}, Bytes: [{HexString}]", id, 
-                string.Join(" ", System.Text.Encoding.UTF8.GetBytes(id).Select(b => b.ToString("X2"))));
+            //_logger.LogInformation("Login: {Id}, Session: {SessionId}, Bytes: [{HexString}]", id, session.SessionId,
+            //string.Join(" ", System.Text.Encoding.UTF8.GetBytes(id).Select(b => b.ToString("X2"))));
 
-            //사용자 등록
             if (!await _chatService.AddUser(id, session))
             {
                 _logger.LogError("Failed to insert user: {SessionId}", session.SessionId);
+                session.Close(DisconnectReason.Failed);
                 return false;
             }
+
+            session.Authenticate();
 
             using var payload = new PacketWriter();
             payload.WriteType(MessageType.LoginSuccess);

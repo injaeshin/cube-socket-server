@@ -1,0 +1,293 @@
+using System.Net.Sockets;
+using Microsoft.Extensions.Logging;
+using Common.Network.Buffer;
+
+namespace Common.Network.Transport;
+
+public class TcpTransport : ITransport, IDisposable
+{
+    private bool _disposed = false;
+    private readonly ILogger _logger;
+
+    private SocketAsyncEventArgs _receiveArgs = null!;
+    private ITransportNotify _listener = null!;
+    private Socket _socket = null!;
+
+    private readonly SendChannel _sendChannel;
+    private readonly PacketBuffer _receiveBuffer;
+
+    private readonly Action<TcpTransport> _releaseTransport;
+    private readonly Action<SocketAsyncEventArgs> _releaseReceiveArgs;
+
+    private bool _isReleased = false;
+    private readonly object _lockRelease = new();
+
+    public TcpTransport(ILoggerFactory loggerFactory, Action<TcpTransport> releaseTransport, Action<SocketAsyncEventArgs> releaseReceiveArgs)
+    {
+        _logger = loggerFactory.CreateLogger<TcpTransport>();
+
+        _sendChannel = new SendChannel(loggerFactory);
+        _receiveBuffer = new PacketBuffer();
+
+        _releaseTransport = releaseTransport;
+        _releaseReceiveArgs = releaseReceiveArgs;
+    }
+
+    public void BindSocket(Socket socket, SocketAsyncEventArgs receiveArgs)
+    {
+        _socket = socket;
+        _receiveArgs = receiveArgs;
+        _receiveArgs.UserToken = this;
+        _receiveArgs.Completed += OnReceiveCompleted;
+
+        ConfigureKeepAlive(_socket);
+        ConfigureNoDelay(_socket);
+
+        _sendChannel.Run(_socket);
+    }
+
+    public void Reset()
+    {
+        if (_socket != null) throw new InvalidOperationException("소켓이 이미 바인딩되었습니다.");
+        if (_receiveArgs != null) throw new InvalidOperationException("ReceiveArgs가 이미 바인딩되었습니다.");
+        _isReleased = false;
+    }
+
+    public void BindNotify(ITransportNotify listener)
+    {
+        _listener = listener;
+    }
+
+    public Task SendAsync(ReadOnlyMemory<byte> payload)
+    {
+        // 패킷 덤프 + 사이즈
+        //_logger.LogInformation("Sending packet: {HexDump}, Size: {Size}", BitConverter.ToString(payload.ToArray()), payload.Length);
+        return _sendChannel.EnqueueAsync(payload);
+    }
+
+    public void Run()
+    {
+        DoReceive();
+    }
+
+    public void Close()
+    {
+        CloseConnection(isGraceful: true);
+    }
+
+    private void CloseConnection(bool isGraceful = false)
+    {
+        if (_isReleased) return;
+
+        if (_socket == null) return;
+
+        try
+        {
+            if (_socket.Connected)
+            {
+                _socket.Shutdown(SocketShutdown.Both);
+                _socket.Close();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during transport close");
+        }
+        finally
+        {
+            if (!_isReleased)
+            {
+                _listener.OnNotifyDisconnected(isGraceful);
+            }
+        }
+    }
+
+    private void ReleaseResources()
+    {
+        lock (_lockRelease)
+        {
+            if (_isReleased) return;
+            _isReleased = true;
+        }
+
+        try
+        {
+            if (_receiveArgs != null)
+            {
+                _receiveArgs.Completed -= OnReceiveCompleted;
+                _receiveArgs.UserToken = null;
+                _receiveArgs.AcceptSocket = null;
+                _releaseReceiveArgs(_receiveArgs);
+                _receiveArgs = null!;
+            }
+
+            _releaseTransport(this);
+            _socket = null!;
+
+            _sendChannel.Reset();
+            _receiveBuffer.Reset();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during resource release");
+        }
+    }
+
+    public bool IsConnectionAlive()
+    {
+        if (_socket == null || _isReleased) return false;
+
+        try
+        {
+            bool isDisconnected = _socket.Poll(1, SelectMode.SelectRead) && _socket.Available == 0;
+            if (isDisconnected)
+            {
+                _logger.LogDebug("[Connection Broken] detected via Poll");
+                CloseConnection(false);
+            }
+
+            return !isDisconnected;
+        }
+        catch (SocketException ex)
+        {
+            _logger.LogDebug("[Connection Exception] {Message}", ex.Message);
+            return false;
+        }
+        catch (ObjectDisposedException)
+        {
+            return false;
+        }
+    }
+
+    private void DoReceive()
+    {
+        if (!IsReceiveReady())
+        {
+            if (!_isReleased)
+            {
+                CloseConnection();
+            }
+            return;
+        }
+
+        try
+        {
+            if (_receiveArgs.Buffer == null)
+            {
+                _logger.LogError("[DoReceive] Receive buffer is null");
+                CloseConnection();
+                return;
+            }
+
+            bool pending = _socket.ReceiveAsync(_receiveArgs);
+            if (!pending)
+            {
+                OnReceiveCompleted(null, _receiveArgs);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[DoReceive] ReceiveAsync 호출 중 오류 발생");
+            CloseConnection();
+        }
+    }
+
+    private bool IsReceiveReady()
+    {
+        return _socket?.Connected == true && _receiveArgs != null && !_isReleased;
+    }
+
+    private async void OnReceiveCompleted(object? sender, SocketAsyncEventArgs e)
+    {
+        try
+        {
+            if (!HandleReceiveResult(e)) return;
+
+            await ProcessReceivedData(e);
+
+            DoReceive();
+        }
+        catch (Exception ex)
+        {
+            _listener.OnNotifyError(ex);
+            CloseConnection();
+            ReleaseResources();
+        }
+    }
+
+    private bool HandleReceiveResult(SocketAsyncEventArgs e)
+    {
+        if (e.LastOperation != SocketAsyncOperation.Receive)
+        {
+            CloseConnection();
+            ReleaseResources();
+            return false;
+        }
+
+        if (e.SocketError != SocketError.Success || e.BytesTransferred == 0)
+        {
+            var isGraceful = e.SocketError == SocketError.Success && e.BytesTransferred == 0;
+            CloseConnection(isGraceful);
+            ReleaseResources();
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task ProcessReceivedData(SocketAsyncEventArgs e)
+    {
+        var data = e.MemoryBuffer[..e.BytesTransferred];
+        _receiveBuffer.TryAppend(data);
+        while (_receiveBuffer.TryReadPacket(out var packetType, out var payload, out var rentedBuffer))
+        {
+            await _listener.OnNotifyReceived(packetType, payload, rentedBuffer);
+        }
+    }
+
+    private static void ConfigureKeepAlive(Socket socket)
+    {
+        socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+        int keepAliveTime = 15;
+        int keepAliveInterval = 5;
+        int keepAliveRetryCount = 3;
+        if (OperatingSystem.IsWindows())
+        {
+            byte[] keepAliveValues = new byte[12];
+            BitConverter.GetBytes(1).CopyTo(keepAliveValues, 0);
+            BitConverter.GetBytes(keepAliveTime * 1000).CopyTo(keepAliveValues, 4);
+            BitConverter.GetBytes(keepAliveInterval * 1000).CopyTo(keepAliveValues, 8);
+            socket.IOControl(IOControlCode.KeepAliveValues, keepAliveValues, null);
+        }
+        else if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+        {
+            socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, keepAliveTime);
+            socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, keepAliveInterval);
+            socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount, keepAliveRetryCount);
+        }
+    }
+
+    private static void ConfigureNoDelay(Socket socket)
+    {
+        if (socket.ProtocolType == ProtocolType.Tcp)
+        {
+            socket.NoDelay = true;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            try
+            {
+                Close();
+                _sendChannel.Dispose();
+            }
+            finally
+            {
+                _disposed = true;
+            }
+        }
+    }
+}

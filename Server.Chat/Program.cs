@@ -4,7 +4,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 using Common.Network;
-using Common.Network.Session;
 
 using Server.Chat.User;
 using Server.Chat.Session;
@@ -25,6 +24,10 @@ public class Program
                 //config.SetBasePath(Directory.GetCurrentDirectory());
                 //config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
             })
+            .ConfigureLogging((context, logging) =>
+            {
+                ServiceRegister.RegisterLogging(logging);
+            })
             .ConfigureServices((context, services) =>
             {
                 ServiceRegister.RegisterServices(services);
@@ -41,14 +44,16 @@ public class Program
         private readonly ILogger _logger;
         private readonly IUserManager _userManager;
         private readonly IPacketDispatcher _packetDispatcher;
-        private readonly ISessionManager _sessionManager;
+        private readonly IChatSessionManager _sessionManager;
 
-        public App(IObjectFactoryHelper objectFactory)
+        public App(IObjectFactoryHelper objectFactory, ILoggerFactory loggerFactory)
         {
-            _logger = LoggerFactoryHelper.Instance.CreateLogger<App>();
+            LoggerFactoryHelper.Initialize(loggerFactory);
+            _logger = LoggerFactoryHelper.CreateLogger<App>();
+            _logger.LogInformation("서버 초기화...");
 
             _userManager = objectFactory.Create<IUserManager>();
-            _sessionManager = objectFactory.Create<ISessionManager>();
+            _sessionManager = objectFactory.Create<IChatSessionManager>();
             _packetDispatcher = objectFactory.Create<IPacketDispatcher>();
 
             RegisterPacketHandler(objectFactory);
@@ -56,20 +61,22 @@ public class Program
 
         public async Task RunAsync()
         {
-            _logger.LogInformation("서버 시작 중...");
+            _logger.LogInformation("서버 시작...");
 
-            var acceptorLogger = LoggerFactoryHelper.Instance.CreateLogger<SocketAcceptor>();
+            var acceptorLogger = LoggerFactoryHelper.CreateLogger<SocketAcceptor>();
             var acceptor = new SocketAcceptor(acceptorLogger, OnClientConnected, NetConsts.PORT, NetConsts.MAX_CONNECTION, NetConsts.LISTEN_BACKLOG);
-            await acceptor.Begin();
+            await acceptor.Run();
+
+            _sessionManager.Run();
 
             _logger.LogInformation("서버가 실행 중입니다. 종료하려면 Enter 키를 누르세요.");
             Console.ReadLine();
 
             _logger.LogInformation("서버 종료 중...");
 
-            acceptor.End();
-            _userManager.End();
-            _sessionManager.End();
+            acceptor.Stop();
+            _userManager.Stop();
+            _sessionManager.Stop();
         }
 
         private void RegisterPacketHandler(IObjectFactoryHelper objectFactory)

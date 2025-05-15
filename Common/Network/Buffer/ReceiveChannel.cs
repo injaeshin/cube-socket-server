@@ -5,30 +5,24 @@ using Common.Network.Packet;
 
 namespace Common.Network.Buffer;
 
-public class ReceiveChannel
+public class ReceiveChannel : IDisposable
 {
+    private bool _disposed = false;
     private readonly ILogger<ReceiveChannel> _logger;
-    private readonly Channel<ReceivedPacket> _channel;
-    private readonly CancellationTokenSource _cancellationTokenSource = new();
-    private readonly Task _workerTask;
+    private Channel<ReceivedPacket> _channel = null!;
+    private CancellationTokenSource _cts = null!;
+    private Task _workerTask = null!;
 
     public ReceiveChannel(ILogger<ReceiveChannel> logger)
     {
         _logger = logger;
-
-        _channel = Channel.CreateUnbounded<ReceivedPacket>(
-            new UnboundedChannelOptions
-            {
-                SingleReader = true,
-                SingleWriter = false,
-            });
-
-        _workerTask = Task.Run(WorkerAsync);
     }
 
-    public bool Enqueue(ReceivedPacket packet)
+    public void Run()
     {
-        return _channel.Writer.TryWrite(packet);
+        Reset();
+
+        _workerTask = Task.Run(WorkerAsync);
     }
 
     public async Task EnqueueAsync(ReceivedPacket packet)
@@ -53,7 +47,7 @@ public class ReceiveChannel
     {
         try
         {
-            await foreach (var packet in _channel.Reader.ReadAllAsync(_cancellationTokenSource.Token))
+            await foreach (var packet in _channel.Reader.ReadAllAsync(_cts.Token))
             {
                 await OnProcessAsync(packet);
             }
@@ -80,11 +74,11 @@ public class ReceiveChannel
 
             if (packet.Session.IsConnectionAlive())
             {
-                await packet.Session.OnProcessReceivedPacketAsync(packet);
+                await packet.Session.OnProcessReceivedAsync(packet);
             }
             else
             {
-                packet.Session.Close();
+                packet.Session.Close(DisconnectReason.ApplicationRequest);
                 _logger.LogWarning("[RecvQueue] Session is not alive: {SessionId}", packet.SessionId);
             }
         }
@@ -102,11 +96,36 @@ public class ReceiveChannel
         }
     }
 
-    public async Task StopAsync()
+    public void Reset()
     {
-        _cancellationTokenSource.Cancel();
-        _channel.Writer.Complete();
-        await _workerTask;
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(ReceiveChannel));
+
+        _cts?.Cancel();
+        _workerTask?.GetAwaiter().GetResult();
+        _channel?.Writer.Complete();
+
+        _cts?.Dispose();
+        _cts = new CancellationTokenSource();
+        _channel = Channel.CreateUnbounded<ReceivedPacket>(
+            new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false,
+            });
+    }
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            _cts.Cancel();
+            _workerTask?.GetAwaiter().GetResult();
+            _channel.Writer.Complete();
+
+            _cts.Dispose();
+            _disposed = true;
+        }
     }
 }
 

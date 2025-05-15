@@ -2,40 +2,33 @@
 
 namespace Server.Chat.Helper;
 
-public interface ILoggerFactoryHelper
+public static class LoggerFactoryHelper
 {
-    ILogger<T> CreateLogger<T>();
-    ILogger CreateLogger(string categoryName);
-    ILoggerFactory GetLoggerFactory();
-}
+    private static ILoggerFactory? _loggerFactory;
 
-internal class LoggerFactoryHelper : ILoggerFactoryHelper
-{
-    private static readonly Lazy<LoggerFactoryHelper> _instance = new(() => new LoggerFactoryHelper());
-    public static LoggerFactoryHelper Instance => _instance.Value;
-
-    private readonly ILoggerFactory _loggerFactory;
-
-    private LoggerFactoryHelper()
+    public static void Initialize(ILoggerFactory loggerFactory)
     {
-        _loggerFactory = LoggerFactory.Create(builder =>
-        {
-            builder.ClearProviders();
-            builder.SetMinimumLevel(LogLevel.Debug);
-            // 로그 출력 형식 설정 
-            builder.AddConsole(options =>
-            {
-                    options.FormatterName = "simple";
-                }).AddSimpleConsole(options =>
-                {
-                    options.TimestampFormat = "[HH:mm:ss] ";
-                    options.SingleLine = true;
-                    options.IncludeScopes = true;
-                });
-        });
+        _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
     }
 
-    public ILogger<T> CreateLogger<T>() => _loggerFactory.CreateLogger<T>();
-    public ILogger CreateLogger(string categoryName) => _loggerFactory.CreateLogger(categoryName);
-    public ILoggerFactory GetLoggerFactory() => _loggerFactory;
+    public static ILogger<T> CreateLogger<T>()
+    {
+        if (_loggerFactory == null)
+            throw new InvalidOperationException("LoggerFactoryHelper is not initialized.");
+        return _loggerFactory.CreateLogger<T>();
+    }
+
+    public static ILogger CreateLogger(string categoryName)
+    {
+        if (_loggerFactory == null)
+            throw new InvalidOperationException("LoggerFactoryHelper is not initialized.");
+        return _loggerFactory.CreateLogger(categoryName);
+    }
+
+    public static ILoggerFactory GetLoggerFactory()
+    {
+        if (_loggerFactory == null)
+            throw new InvalidOperationException("LoggerFactoryHelper is not initialized.");
+        return _loggerFactory;
+    }
 }

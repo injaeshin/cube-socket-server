@@ -1,6 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
-using Common.Network.Session;
+using Common.Network.Pool;
 using Microsoft.Extensions.Logging;
 
 namespace Common.Network;
@@ -32,13 +32,13 @@ public class SocketAcceptor : IDisposable
         _listenSocket.Listen(listenBacklog);
     }
 
-    public async Task Begin()
+    public async Task Run()
     {
         _logger.LogInformation("소켓 서버 시작 (포트: {Port}, 최대 접속자: {MaxConnections})", _port, _maxConnections);
         await Task.Run(RunAcceptAsync);
     }
 
-    public void End()
+    public void Stop()
     {
         Dispose();
     }
@@ -76,7 +76,7 @@ public class SocketAcceptor : IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Accept 시작 중 오류 발생");
-            End();
+            Stop();
         }
     }
 
@@ -156,7 +156,7 @@ public class SocketAcceptor : IDisposable
         try
         {
             _logger.LogDebug("ProcessSocketAsync 시작: {RemoteEndPoint}", socket.RemoteEndPoint);
-            
+
             try
             {
                 await _onClientConnected(socket);
@@ -167,7 +167,7 @@ public class SocketAcceptor : IDisposable
                 // SocketAsyncEventArgs 대여 실패 등의 리소스 부족 오류
                 _logger.LogWarning("클라이언트 연결 처리를 위한 리소스 할당 실패: {RemoteEndPoint} - {Message}",
                     socket.RemoteEndPoint, ex.Message);
-                
+
                 try
                 {
                     // 클라이언트에게 서버 과부하 메시지 전송 (선택 사항)
@@ -176,7 +176,7 @@ public class SocketAcceptor : IDisposable
                     await socket.SendAsync(errorMessage, SocketFlags.None);
                 }
                 catch { /* 무시 */ }
-                
+
                 // 소켓 정리
                 try { socket.Shutdown(SocketShutdown.Both); } catch { }
                 try { socket.Close(); } catch { }
@@ -186,13 +186,14 @@ public class SocketAcceptor : IDisposable
         {
             _logger.LogError(ex, "클라이언트 연결 처리 중 오류 발생: {RemoteEndPoint}",
                 socket.RemoteEndPoint != null ? socket.RemoteEndPoint.ToString() : "알 수 없음");
-                
+
             // 정상적으로 소켓 종료 시도
             try { socket.Shutdown(SocketShutdown.Both); } catch { }
-            try { socket.Close(); } catch (Exception closeEx) 
-            { 
-                _logger.LogError(closeEx, "소켓 닫기 실패: {RemoteEndPoint}", 
-                    socket.RemoteEndPoint != null ? socket.RemoteEndPoint.ToString() : "알 수 없음"); 
+            try { socket.Close(); }
+            catch (Exception closeEx)
+            {
+                _logger.LogError(closeEx, "소켓 닫기 실패: {RemoteEndPoint}",
+                    socket.RemoteEndPoint != null ? socket.RemoteEndPoint.ToString() : "알 수 없음");
             }
         }
     }

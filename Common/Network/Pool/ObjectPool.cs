@@ -1,11 +1,13 @@
 using System.Collections.Concurrent;
 
-namespace Common.Network.Session;
+namespace Common.Network.Pool;
 
 public class ObjectPool<T> where T : class, IDisposable
 {
     private readonly ConcurrentStack<T> _pool;
     private readonly Func<T> _factory;
+
+    private bool _disposed = false;
 
     public ObjectPool(Func<T> factory, int initialSize = 10)
     {
@@ -27,7 +29,7 @@ public class ObjectPool<T> where T : class, IDisposable
 
         return _factory.Invoke();
     }
-    
+
     public void Return(T obj)
     {
         if (obj != null)
@@ -52,7 +54,13 @@ public class ObjectPool<T> where T : class, IDisposable
 
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         Close();
+        _disposed = true;
     }
 
     public int Count => _pool.Count;

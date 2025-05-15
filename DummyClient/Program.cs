@@ -1,13 +1,15 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Hosting;
-using __DummyClient;
+using DummyClient;
+using Common.Network.Pool;
+using Common.Network;
 
 var host = Host.CreateDefaultBuilder(args)
     .ConfigureLogging((context, logging) =>
     {
         logging.ClearProviders();
-        logging.SetMinimumLevel(LogLevel.Trace);
+        logging.SetMinimumLevel(LogLevel.Information);
         logging.AddConsole(options =>
         {
             options.FormatterName = "simple";
@@ -21,11 +23,17 @@ var host = Host.CreateDefaultBuilder(args)
     .ConfigureServices((context, services) =>
     {
         services.AddTransient<App>();
-        services.AddTransient(typeof(ILogger<DummyClient>), sp =>
+        services.AddTransient(typeof(ILogger<Client>), sp =>
         {
             var factory = sp.GetRequiredService<ILoggerFactory>();
-            return factory.CreateLogger<DummyClient>();
+            return factory.CreateLogger<Client>();
         });
+
+        services.AddSingleton(provider => new SocketAsyncEventArgsPool(provider.GetService<ILoggerFactory>()!, NetConsts.MAX_CONNECTION));
+        services.AddSingleton<TcpTransportPool>();
+        services.AddSingleton<MessageHandler>();
+        services.AddSingleton<MessageSender>();
+        services.AddSingleton<ClientSession>();
     })
     .Build();
 

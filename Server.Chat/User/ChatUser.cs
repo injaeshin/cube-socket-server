@@ -7,13 +7,13 @@ namespace Server.Chat.User;
 public interface IChatUser
 {
     string Name { get; }
-    ISession Session { get; }
+    INetSession Session { get; }
 }
 
-public class ChatUser(string name, ISession session) : IChatUser
+public class ChatUser(string name, INetSession session) : IChatUser
 {
     public string Name { get; } = name;
-    public ISession Session { get; } = session;
+    public INetSession Session { get; } = session;
 
     public ConcurrentDictionary<int, ChatChannel> Channels { get; } = new();
 

@@ -8,63 +8,55 @@ using Server.Chat.Helper;
 
 namespace Server.Chat.Session;
 
-public class ChatSession(IPacketDispatcher packetDispatcher, SessionEvents events) : Common.Network.Session.Session(LoggerFactoryHelper.Instance.GetLoggerFactory()), ISession
+public interface IChatSession : INetSession
 {
-    private readonly ILogger _logger = LoggerFactoryHelper.Instance.CreateLogger<ChatSession>();
-    private readonly SessionEvents _events = events;
-    private readonly IPacketDispatcher _packetDispatcher = packetDispatcher;
+}
 
-    protected override void OnConnected(ISession session)
+public class ChatSession : NetSession, IChatSession
+{
+    private readonly ILogger _logger;
+    private readonly IPacketDispatcher _packetDispatcher;
+
+    public ChatSession(IPacketDispatcher packetDispatcher, SessionEvents events) : base(LoggerFactoryHelper.GetLoggerFactory(), events)
     {
-        base.OnConnected(session);
-        _events.KeepAlive.OnRegister(this);
+        _logger = LoggerFactoryHelper.CreateLogger<ChatSession>();
+        _packetDispatcher = packetDispatcher;
     }
 
-    protected override void OnDisconnected(ISession session, DisconnectReason reason)
+    protected override void OnConnected(INetSession session)
     {
-        base.OnDisconnected(session, reason);
-        _events.KeepAlive.OnUnregister(SessionId);
-        _events.Resource.OnReturnSession(this);
+        _logger.LogInformation("ChatSession connected: {SessionId}", SessionId);
+        HeartbeatRegister();
     }
 
-    protected override async Task OnPacketReceived(ReceivedPacket packet)
+    protected override void OnDisconnected(INetSession session, bool isGraceful)
     {
-        await base.OnPacketReceived(packet);
-        _events.KeepAlive.OnUpdate(SessionId);
+        _logger.LogInformation("ChatSession disconnected: {SessionId}", SessionId);
+        HeartbeatUnregister();
+        RemoveSession();
+    }
 
-        // 선행 처리
+    protected override bool OnPreProcessReceivedAsync(ReceivedPacket packet)
+    {
+        HeartbeatUpdate();
+
         if (packet.Type == MessageType.Ping || packet.Type == MessageType.Pong)
         {
-            return;
+            return false;
         }
 
-        if (!_packetDispatcher.IsRegistered(packet.Type))
-        {
-            _logger.LogError("패킷 처리 중단: {SessionId} - 이유: {Type}", SessionId, packet.Type);
-            Close(DisconnectReason.InvalidData);
-            return;
-        }
-
-        await EnqueueRecvAsync(packet);
+        return true;
     }
 
-    public override async Task OnProcessReceivedPacketAsync(ReceivedPacket packet)
+    public override async Task OnProcessReceivedAsync(ReceivedPacket packet)
     {
-        await base.OnProcessReceivedPacketAsync(packet);
-        _logger.LogDebug("[Session Process Received] {SessionId} - Length: {DataLength}", SessionId, packet.Data.Length);
-
         if (!_packetDispatcher.TryGetHandler(packet.Type, out var handler))
         {
-            _logger.LogError("패킷 처리 중단: {SessionId} - 이유: {Reason}", SessionId, packet.Data.Length);
-            Close(DisconnectReason.InvalidData);
+            _logger.LogError("Invalid packet type: {SessionId} - {Type} / Length: {Length}", SessionId, packet.Type, packet.Data.Length);
+            Close(DisconnectReason.InvalidType);
             return;
         }
 
         await handler.HandleAsync(this, packet.Data);
     }
-
-    // public override async Task SendAsync(ReadOnlyMemory<byte> packet)
-    // {
-    //     await base.SendAsync(packet);
-    // }
 }

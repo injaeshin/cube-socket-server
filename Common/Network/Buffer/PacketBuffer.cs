@@ -1,28 +1,40 @@
 using System.Buffers;
-using System.Diagnostics;
 
 namespace Common.Network.Buffer;
 
-public class PacketBuffer
+public class PacketBuffer(int size = NetConsts.PACKET_BUFFER_SIZE)
 {
-    private readonly byte[] _buffer = new byte[NetConsts.PACKET_BUFFER_SIZE];
+    private readonly int _bufferSize = size;
+    private readonly byte[] _buffer = new byte[size];
 
     private int _readPos = 0;
     private int _writePos = 0;
 
     public bool TryAppend(ReadOnlySpan<byte> data)
     {
-        if (FreeSize() < data.Length)
+        int freeSize = FreeSize();
+        if (freeSize < data.Length)
+        {
+            //Console.WriteLine($"[PacketBuffer] TryAppend 실패: FreeSize={freeSize}, data.Length={data.Length}, _writePos={_writePos}, _readPos={_readPos}, DataSize={DataSize()}");
             return false;
+        }
 
-        int firstCopyLength = Math.Min(data.Length, NetConsts.PACKET_BUFFER_SIZE - _writePos);
-        data[..firstCopyLength].CopyTo(_buffer.AsSpan(_writePos));
+        int tailSpace = _bufferSize - _writePos;
+        if (data.Length <= tailSpace)
+        {
+            // 한 번에 복사 가능
+            data.CopyTo(_buffer.AsSpan(_writePos, data.Length));
+        }
+        else
+        {
+            // 두 번에 나눠서 복사
+            data[..tailSpace].CopyTo(_buffer.AsSpan(_writePos, tailSpace));
+            data[tailSpace..].CopyTo(_buffer.AsSpan(0, data.Length - tailSpace));
+        }
 
-        int remainLength = data.Length - firstCopyLength;
-        if (remainLength > 0)
-            data[firstCopyLength..].CopyTo(_buffer.AsSpan(0, remainLength));
+        _writePos = (_writePos + data.Length) % _bufferSize;
 
-        _writePos = (_writePos + data.Length) % NetConsts.PACKET_BUFFER_SIZE;
+        //Console.WriteLine($"[PacketBuffer] TryAppend 성공: FreeSize={freeSize}, data.Length={data.Length}, _writePos={_writePos}, _readPos={_readPos}, DataSize={DataSize()}");
         return true;
     }
 
@@ -57,20 +69,23 @@ public class PacketBuffer
             return true;
         }
 
-        int payloadStart = (_readPos + 4) % NetConsts.PACKET_BUFFER_SIZE;
-        if (NetConsts.PACKET_BUFFER_SIZE - payloadStart >= payloadLength)
+        rentedBuffer = ArrayPool<byte>.Shared.Rent(payloadLength);
+
+        int payloadStart = (_readPos + 4) % _bufferSize;
+        if (_bufferSize - payloadStart >= payloadLength)
         {
-            payload = new ReadOnlyMemory<byte>(_buffer, payloadStart, payloadLength);
-            rentedBuffer = null;
+            _buffer.AsSpan(payloadStart, payloadLength).CopyTo(rentedBuffer.AsSpan(0, payloadLength));
         }
         else
         {
-            int firstPart = NetConsts.PACKET_BUFFER_SIZE - payloadStart;
-            rentedBuffer = ArrayPool<byte>.Shared.Rent(payloadLength);
+            int firstPart = _bufferSize - payloadStart;
             _buffer.AsSpan(payloadStart, firstPart).CopyTo(rentedBuffer.AsSpan(0, firstPart));
             _buffer.AsSpan(0, payloadLength - firstPart).CopyTo(rentedBuffer.AsSpan(firstPart, payloadLength - firstPart));
-            payload = new ReadOnlyMemory<byte>(rentedBuffer, 0, payloadLength);
         }
+
+        payload = new ReadOnlyMemory<byte>(rentedBuffer, 0, payloadLength);
+
+        //Console.WriteLine($"Read packet: {BitConverter.ToString(payload.ToArray())}, Type: {packetType}");
 
         Skip(totalPacketSize);
         return true;
@@ -78,30 +93,21 @@ public class PacketBuffer
 
     private ushort ReadUInt16FromBuffer(int offset)
     {
-        int realOffset = (_readPos + offset) % NetConsts.PACKET_BUFFER_SIZE;
-        int nextOffset = (_readPos + offset + 1) % NetConsts.PACKET_BUFFER_SIZE;
+        int realOffset = (_readPos + offset) % _bufferSize;
+        int nextOffset = (_readPos + offset + 1) % _bufferSize;
 
         return (ushort)(_buffer[realOffset] << 8 | _buffer[nextOffset]);
     }
 
-    // private bool TryPeekUShort(out ushort value)
-    // {
-    //     value = 0;
-    //     if (DataSize() < 2)
-    //         return false;
-    //     value = ReadUInt16FromBuffer(0);
-    //     return true;
-    // }
-
     public void Skip(int count)
     {
-        _readPos = (_readPos + count) % NetConsts.PACKET_BUFFER_SIZE;
+        _readPos = (_readPos + count) % _bufferSize;
     }
 
     public int FreeSize()
     {
         if (_writePos >= _readPos)
-            return NetConsts.PACKET_BUFFER_SIZE - (_writePos - _readPos) - 1;
+            return _bufferSize - (_writePos - _readPos) - 1;
 
         return _readPos - _writePos - 1;
     }
@@ -111,17 +117,24 @@ public class PacketBuffer
         if (_writePos >= _readPos)
             return _writePos - _readPos;
 
-        return NetConsts.PACKET_BUFFER_SIZE - _readPos + _writePos;
+        return _bufferSize - _readPos + _writePos;
     }
 
     public void Reset()
     {
         _readPos = 0;
         _writePos = 0;
-        Debug.WriteLine("[PacketBuffer] Reset: Buffer has been reset");
     }
 
-    public bool TryRead(int maxBytes, out ReadOnlyMemory<byte> chunk, out byte[]? rentedBuffer)
+    public static void ReturnBuffer(byte[]? rentedBuffer)
+    {
+        if (rentedBuffer != null)
+        {
+            ArrayPool<byte>.Shared.Return(rentedBuffer);
+        }
+    }
+
+    public bool TryReadAsContinuous(int maxBytes, out ReadOnlyMemory<byte> chunk, out byte[]? rentedBuffer)
     {
         int dataSize = DataSize();
         rentedBuffer = null;
@@ -131,13 +144,16 @@ public class PacketBuffer
             return false;
         }
         int toRead = Math.Min(dataSize, maxBytes);
-        if (_writePos > _readPos || _readPos + toRead <= NetConsts.PACKET_BUFFER_SIZE)
+
+        if (_writePos > _readPos || _readPos + toRead <= _bufferSize)
         {
+            // 연속된 메모리: 내부 버퍼 그대로 반환 (복사/임시 버퍼 불필요)
             chunk = new ReadOnlyMemory<byte>(_buffer, _readPos, toRead);
         }
         else
         {
-            int firstPart = NetConsts.PACKET_BUFFER_SIZE - _readPos;
+            // 분리된 메모리: 임시 버퍼에 복사
+            int firstPart = _bufferSize - _readPos;
             rentedBuffer = ArrayPool<byte>.Shared.Rent(toRead);
             _buffer.AsSpan(_readPos, firstPart).CopyTo(rentedBuffer.AsSpan(0, firstPart));
             _buffer.AsSpan(0, toRead - firstPart).CopyTo(rentedBuffer.AsSpan(firstPart, toRead - firstPart));

@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 
-using Common.Network.Packet;
 using Common.Network.Session;
 
 namespace Common.Network.Handler;
@@ -8,7 +7,7 @@ namespace Common.Network.Handler;
 public interface IPacketDispatcher
 {
     bool TryGetHandler(MessageType type, out IPacketHandler handler);
-    Task<bool> DispatchAsync(ISession session, MessageType type, ReadOnlyMemory<byte> payload);
+    Task<bool> DispatchAsync(INetSession session, MessageType type, ReadOnlyMemory<byte> payload);
 
     bool IsRegistered(MessageType type);
     void Register(MessageType type, IPacketHandler handler);
@@ -35,7 +34,7 @@ public class PacketDispatcher(ILogger<PacketDispatcher> logger) : IPacketDispatc
         return handler != null;
     }
 
-    public async Task<bool> DispatchAsync(ISession session, MessageType type, ReadOnlyMemory<byte> payload)
+    public async Task<bool> DispatchAsync(INetSession session, MessageType type, ReadOnlyMemory<byte> payload)
     {
         if (!_handlers.TryGetValue(type, out var handler))
         {
