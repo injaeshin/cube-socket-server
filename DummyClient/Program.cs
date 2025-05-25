@@ -1,56 +1,59 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Hosting;
-using DummyClient;
-using Common.Network.Pool;
-using Common.Network;
+﻿using System.Net;
+using System.Net.Sockets;
+using System.Text;
 
-var host = Host.CreateDefaultBuilder(args)
-    .ConfigureLogging((context, logging) =>
+class Program
+{
+    private static readonly string WELCOME_MESSAGE = "knock-knock";
+    private static readonly string SERVER_IP = "127.0.0.1";
+    private static readonly int SERVER_PORT = 7778;
+
+    static async Task Main(string[] args)
     {
-        logging.ClearProviders();
-        logging.SetMinimumLevel(LogLevel.Information);
-        logging.AddConsole(options =>
+        Console.WriteLine("UDP 테스트 클라이언트 시작...");
+
+        using var client = new UdpClient();
+        var serverEndPoint = new IPEndPoint(IPAddress.Parse(SERVER_IP), SERVER_PORT);
+
+        try
         {
-            options.FormatterName = "simple";
-        }).AddSimpleConsole(options =>
+            // 세션 ID 생성 (4바이트)
+            string sessionId = "TEST";
+            byte[] sessionIdBytes = Encoding.UTF8.GetBytes(sessionId);
+
+            // WELCOME_MESSAGE 전송
+            byte[] welcomeBytes = Encoding.UTF8.GetBytes(WELCOME_MESSAGE);
+            byte[] sendData = new byte[sessionIdBytes.Length + welcomeBytes.Length];
+
+            Buffer.BlockCopy(sessionIdBytes, 0, sendData, 0, sessionIdBytes.Length);
+            Buffer.BlockCopy(welcomeBytes, 0, sendData, sessionIdBytes.Length, welcomeBytes.Length);
+
+            Console.WriteLine($"서버로 메시지 전송: {sessionId}-{WELCOME_MESSAGE}");
+            await client.SendAsync(sendData, sendData.Length, serverEndPoint);
+
+            // 서버로부터 응답 수신
+            var result = await client.ReceiveAsync();
+            string response = Encoding.UTF8.GetString(result.Buffer);
+            Console.WriteLine($"서버로부터 응답 수신: {response}");
+
+            // 일반 메시지 전송 테스트
+            string testMessage = "Hello Server!";
+            byte[] messageBytes = Encoding.UTF8.GetBytes(testMessage);
+            await client.SendAsync(messageBytes, messageBytes.Length, serverEndPoint);
+            Console.WriteLine($"일반 메시지 전송: {testMessage}");
+
+            // 응답 수신
+            result = await client.ReceiveAsync();
+            response = Encoding.UTF8.GetString(result.Buffer);
+            Console.WriteLine($"서버로부터 응답 수신: {response}");
+        }
+        catch (Exception ex)
         {
-            options.TimestampFormat = "[HH:mm:ss] ";
-            options.SingleLine = true;
-            options.IncludeScopes = true;
-        });
-    })
-    .ConfigureServices((context, services) =>
-    {
-        services.AddTransient<App>();
-        services.AddTransient(typeof(ILogger<Client>), sp =>
+            Console.WriteLine($"에러 발생: {ex.Message}");
+        }
+        finally
         {
-            var factory = sp.GetRequiredService<ILoggerFactory>();
-            return factory.CreateLogger<Client>();
-        });
-
-        services.AddSingleton(provider => new SocketAsyncEventArgsPool(provider.GetService<ILoggerFactory>()!, NetConsts.MAX_CONNECTION));
-        services.AddSingleton<TcpTransportPool>();
-        services.AddSingleton<MessageHandler>();
-        services.AddSingleton<MessageSender>();
-        services.AddSingleton<ClientSession>();
-    })
-    .Build();
-
-// 파라미터 입력 (기본값: 10명, 30초)
-int clientCount = 10;
-int durationSec = 30;
-
-Console.WriteLine($"동시 접속 클라이언트 수 입력 (기본: {clientCount}): ");
-var input = Console.ReadLine();
-if (int.TryParse(input, out var cc) && cc > 0) clientCount = cc;
-Console.WriteLine($"시뮬레이션 시간(초) 입력 (기본: {durationSec}): ");
-input = Console.ReadLine();
-if (int.TryParse(input, out var ds) && ds > 0) durationSec = ds;
-
-var app = host.Services.GetRequiredService<App>();
-await app.RunSimulationAsync(clientCount, durationSec);
-
-Console.WriteLine("시뮬레이션 종료. 아무 키나 누르세요...");
-Console.ReadKey();
-
+            Console.WriteLine("클라이언트 종료");
+        }
+    }
+}

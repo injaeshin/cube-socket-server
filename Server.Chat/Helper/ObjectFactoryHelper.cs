@@ -1,10 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Server.Chat.Helper;
+namespace Cube.Server.Chat.Helper;
 
 public interface IObjectFactoryHelper
 {
     T Create<T>() where T : notnull;
+    T Create<T>(params object[] parameters) where T : notnull;
 }
 
 public class ObjectFactoryHelper(IServiceProvider serviceProvider) : IObjectFactoryHelper
@@ -14,5 +15,10 @@ public class ObjectFactoryHelper(IServiceProvider serviceProvider) : IObjectFact
     public T Create<T>() where T : notnull
     {
         return _serviceProvider.GetRequiredService<T>();
+    }
+
+    public T Create<T>(params object[] parameters) where T : notnull
+    {
+        return ActivatorUtilities.CreateInstance<T>(_serviceProvider, parameters);
     }
 }

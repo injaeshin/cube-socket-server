@@ -1,38 +1,45 @@
 using Microsoft.Extensions.DependencyInjection;
-
-using Server.Chat.Handler;
-using Server.Chat.Service;
-using Server.Chat.Session;
-using Server.Chat.User;
-
-using Common.Network.Handler;
-using Common.Network.Pool;
-using Common.Network;
 using Microsoft.Extensions.Logging;
 
-namespace Server.Chat.Helper;
+using Cube.Network;
+using Cube.Network.Pool;
+using Cube.Session;
+
+using Cube.Server.Chat.Session;
+
+
+namespace Cube.Server.Chat.Helper;
 
 public static class ServiceRegister
 {
     public static void RegisterServices(IServiceCollection services)
     {
         // 공통 서비스
-        services.AddSingleton(provider => new SocketAsyncEventArgsPool(provider.GetService<ILoggerFactory>()!, NetConsts.MAX_CONNECTION));
-        services.AddSingleton(provider => new TcpTransportPool(provider.GetService<ILoggerFactory>()!));
-        services.AddSingleton<IPacketDispatcher, PacketDispatcher>();
-        services.AddSingleton<IChatService, ChatService>();
+        services.AddSingleton(provider => new SocketAsyncEventArgsPool(provider.GetService<ILoggerFactory>()!, NetConsts.MAX_CONNECTIONS));
+        //services.AddSingleton<IPacketDispatcher, PacketDispatcher>();
+        //services.AddSingleton<IChatService, ChatService>();
 
-        // 사용자 관리
-        services.AddSingleton<IUserManager, UserManager>();
+        // 관리
+        //services.AddSingleton<IUserManager, UserManager>();
+        services.AddSingleton<INetworkManager, NetworkManager>();
         services.AddSingleton<IChatSessionManager, ChatSessionManager>();
 
         // 핸들러 등록
-        services.AddTransient<LoginHandler>();
-        services.AddTransient<LogoutHandler>();
-        services.AddTransient<ChatMessageHandler>();
+        //services.AddTransient<LoginHandler>();
+        //services.AddTransient<LogoutHandler>();
+        //services.AddTransient<ChatMessageHandler>();
 
         // 헬퍼 등록
         services.AddSingleton<IObjectFactoryHelper, ObjectFactoryHelper>();
+    }
+
+    public static void RegisterHostedServices(IServiceCollection services)
+    {
+        services.AddSingleton<SessionHeartbeat>();
+        services.AddHostedService<SessionHeartbeat>();
+
+        services.AddSingleton<App>();
+        services.AddHostedService<App>();
     }
 
     public static void RegisterLogging(ILoggingBuilder logging)

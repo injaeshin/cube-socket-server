@@ -1,36 +1,22 @@
-using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
+using System.Net.Sockets;
+using Cube.Session;
 
-using Common.Network.Session;
-using Common.Network.Handler;
-using Server.Chat.Helper;
+using Cube.Server.Chat.Helper;
 
+namespace Cube.Server.Chat.Session;
 
-namespace Server.Chat.Session;
-
-public interface IChatSessionManager : INetSessionManager
+public interface IChatSessionManager : ISessionManager
 {
-    bool TryGetSession(string sessionId, out INetSession? session);
 }
 
-public class ChatSessionManager : NetSessionManager<ChatSession>, IChatSessionManager
+public class ChatSessionManager : SessionManager<ChatSession>, IChatSessionManager
 {
-    //private readonly ILogger<ChatSessionManager> _logger;
-    private readonly IPacketDispatcher _packetDispatcher;
-
-    public ChatSessionManager(ILoggerFactory loggerFactory, IPacketDispatcher packetDispatcher) : base(loggerFactory)
+    private readonly ILogger _logger;
+    public ChatSessionManager(SessionHeartbeat heartbeatMonitor) : base(LoggerFactoryHelper.GetLoggerFactory(), heartbeatMonitor)
     {
-        //_logger = LoggerFactoryHelper.CreateLogger<ChatSessionManager>();
-        _packetDispatcher = packetDispatcher;
+        _logger = LoggerFactoryHelper.CreateLogger<ChatSessionManager>();
     }
 
-    protected override ChatSession CreateNewSession(Socket socket, SessionEvents events)
-    {
-        return new ChatSession(_packetDispatcher, events);
-    }
-
-    public bool TryGetSession(string sessionId, out INetSession? session)
-    {
-        throw new NotImplementedException();
-    }
+    protected override ChatSession CreateNewSession(Socket socket, SessionEvent events) => new(events);
 }
