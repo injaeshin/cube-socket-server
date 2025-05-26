@@ -12,7 +12,7 @@ public enum PacketType : ushort
     Login = 0x0003,
     LoginSuccess = 0x0004,
     Logout = 0x0005,
-
+    LogoutSuccess = 0x0006,
     Chat = 0x0100,
     ChatMessage = 0x0101,
 

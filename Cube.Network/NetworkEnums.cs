@@ -20,6 +20,7 @@ public enum DisconnectReason
     ApplicationRequest,    // 애플리케이션에서 요청
     InvalidType,           // 잘못된 타입
     InvalidData,           // 잘못된 데이터
+    InvalidPacket,         // 잘못된 패킷
     NotConnected,          // 연결되지 않음
     NotAuthorized,         // 권한 없음
     NotAuthenticated,      // 인증되지 않음

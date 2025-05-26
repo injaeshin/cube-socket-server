@@ -12,8 +12,9 @@ public sealed class ProcessChannel : IDisposable
     private readonly CancellationTokenSource _cts;
     private readonly Task _workerTask;
     private readonly Func<ReceivedContext, Task> _onProcess;
-
     private bool _disposed = false;
+
+    public Task Completion => _workerTask;
 
     public ProcessChannel(ILoggerFactory loggerFactory, Func<ReceivedContext, Task> onProcess)
     {
@@ -53,7 +54,7 @@ public sealed class ProcessChannel : IDisposable
         }
         catch (OperationCanceledException)
         {
-            _logger.LogInformation("[RecvQueue] Worker loop cancelled");
+            _logger.LogDebug("[RecvQueue] Worker loop cancelled");
         }
         catch (Exception e)
         {
@@ -75,9 +76,13 @@ public sealed class ProcessChannel : IDisposable
 
     public void Close()
     {
+        if (_disposed) return;
+        if (_workerTask.IsCompleted) return;
+        _disposed = true;
+
         _cts.Cancel();
         _channel.Writer.TryComplete();
-        _workerTask?.Wait(TimeSpan.FromSeconds(1));
+        _workerTask.Wait(TimeSpan.FromSeconds(30));        
         _cts.Dispose();
     }
 

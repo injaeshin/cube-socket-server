@@ -132,12 +132,6 @@ public class NetworkManager : INetworkManager
         return true;
     }
 
-    // public async Task OnReceived(ReceivedContext packet)
-    // {
-    //     await Task.CompletedTask;
-    //     throw new NotImplementedException();
-    // }
-
     // private async Task UdpSendToAsync(EndPoint ep, ushort ack, ReadOnlyMemory<byte> payload)
     // {
     //     if (!_sessionManager.TryGetSessionId(ep, out var sessionId))
