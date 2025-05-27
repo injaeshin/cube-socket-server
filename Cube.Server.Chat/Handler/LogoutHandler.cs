@@ -1,25 +1,25 @@
 using Microsoft.Extensions.Logging;
 using Cube.Common.Interface;
 using Cube.Packet;
-using Cube.Server.Chat.Helper;
-using Cube.Server.Chat.Service;
-
 
 namespace Cube.Server.Chat.Handler;
 
-public class LogoutHandler(IChatService chatService) : PacketHandlerBase
+public class LogoutHandler : IPacketHandler
 {
-    private readonly ILogger _logger = LoggerFactoryHelper.CreateLogger<LogoutHandler>();
-    private readonly IChatService _chatService = chatService;
+    private readonly ILogger _logger;
 
-    public override PacketType Type => PacketType.Logout;
+    public LogoutHandler(ILogger<LogoutHandler> logger)
+    {
+        _logger = logger;
+    }
 
-    public override async Task<bool> HandleAsync(ISession session)
+    public PacketType Type => PacketType.Logout;
+
+    public async Task<bool> HandleAsync(ISession session, ReadOnlyMemory<byte> payload)
     {
         _logger.LogInformation("Logout: {SessionId}", session.SessionId);
         session.SetDisconnected();
-        await _chatService.DeleteUser(session.SessionId);
 
-        return true;
+        return await Task.FromResult(true);
     }
 }

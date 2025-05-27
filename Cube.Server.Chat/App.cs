@@ -2,8 +2,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Cube.Core;
 using Cube.Core.Sessions;
-
-using Cube.Server.Chat.Helper;
 using Cube.Server.Chat.Session;
 using Cube.Server.Chat.Processor;
 

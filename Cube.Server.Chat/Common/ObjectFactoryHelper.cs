@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Cube.Server.Chat.Helper;
+namespace Cube.Server.Chat;
 
 public interface IObjectFactoryHelper
 {

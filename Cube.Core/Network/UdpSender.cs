@@ -7,7 +7,6 @@ namespace Cube.Core.Network;
 
 public class UdpSender : IDisposable
 {
-    private readonly ILogger _logger;
     private readonly Socket _socket;
     private readonly UdpSendChannel _sendChannel;
     private readonly TransportUdpSendHandler _sendEvent;
@@ -16,9 +15,7 @@ public class UdpSender : IDisposable
 
     public UdpSender(ILoggerFactory loggerFactory, PoolEvent poolEvent, TransportUdpSendHandler sendEvent)
     {
-        _logger = loggerFactory.CreateLogger<UdpSender>();
         _sendEvent = sendEvent;
-
         _sendChannel = new UdpSendChannel(loggerFactory, poolEvent);
 
         _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);

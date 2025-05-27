@@ -1,6 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 
-namespace Cube.Server.Chat.Helper;
+namespace Cube.Server.Chat;
 
 public static class LoggerFactoryHelper
 {

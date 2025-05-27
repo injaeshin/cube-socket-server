@@ -2,8 +2,6 @@ using Microsoft.Extensions.Logging;
 using System.Net.Sockets;
 using Cube.Core.Sessions;
 
-using Cube.Server.Chat.Helper;
-
 namespace Cube.Server.Chat.Session;
 
 public interface IChatSessionManager : ISessionManager

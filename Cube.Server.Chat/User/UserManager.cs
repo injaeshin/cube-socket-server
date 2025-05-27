@@ -3,7 +3,6 @@ using Microsoft.Extensions.Logging;
 using Cube.Core;
 using Cube.Core.Sessions;
 using Cube.Common.Interface;
-using Cube.Server.Chat.Helper;
 
 namespace Cube.Server.Chat.User;
 

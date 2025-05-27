@@ -37,16 +37,16 @@ public class PacketHelper
         }
     }
 
-    public static bool TryGetPacketType(ReadOnlyMemory<byte> data, out ushort packetType)
+    public static bool TryGetPacketType(ReadOnlyMemory<byte> data, out PacketType packetType)
     {
-        packetType = 0;
+        packetType = PacketType.None;
 
         if (data.Length < 2)
         {
             return false;
         }
 
-        packetType = (ushort)(data.Span[0] << 8 | data.Span[1]);
+        packetType = (PacketType)(data.Span[0] << 8 | data.Span[1]);
         return true;
     }
 }

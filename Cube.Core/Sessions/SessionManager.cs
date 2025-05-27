@@ -83,7 +83,7 @@ public abstract class SessionManager<T>(ILoggerFactory loggerFactory, SessionHea
             {
                 OnReturnSession = (session) =>
                 {
-                    _eventHandler.IO.OnSessionClosed(session);
+                    _eventHandler.IO.OnSessionClosed(session.SessionId);
                     _sessions.TryRemove(session.SessionId, out _);
                 }
             },

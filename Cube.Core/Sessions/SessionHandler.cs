@@ -20,7 +20,7 @@ public class SessionIOHandler
 {
     public required Func<string, Memory<byte>, byte[]?, Socket, Task> OnPacketSendAsync;
     public required Func<ReceivedContext, Task> OnPacketReceived;
-    public required Func<ISession, Task> OnSessionClosed;
+    public required Func<string, Task> OnSessionClosed;
 }
 
 public class SessionEventHandler

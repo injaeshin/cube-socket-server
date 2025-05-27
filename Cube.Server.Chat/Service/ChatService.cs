@@ -1,110 +1,35 @@
-using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
-
 using Cube.Common.Interface;
-using Cube.Server.Chat.Helper;
-using Cube.Server.Chat.User;
-using Cube.Server.Chat.Model;
-using Cube.Server.Chat.Channel;
-
+using Cube.Packet;
+using Cube.Server.Chat.Handler;
 
 namespace Cube.Server.Chat.Service;
 
-public interface IChatService
+public class ChatService : IPacketDispatcher
 {
-    Task<bool> AddUser(string userName, ISession session);
-    Task<bool> DeleteUser(string sessionId);
-    Task<bool> JoinChannel(int channelId, IChatUser user);
-    Task<bool> LeaveChannel(int channelId, IChatUser user);
-
-    bool TryGetUserBySession(string sessionId, out IChatUser? user);
-    Task SendChatMessageToChannel(int channelId, ChatMessage message);
-}
-
-public class ChatService : IChatService
-{
-    private readonly ILogger _logger = LoggerFactoryHelper.CreateLogger<ChatService>();
-    private readonly ConcurrentDictionary<int, ChatChannel> _channels = new();
-    private readonly IUserManager _userManager;
+    private readonly ILogger _logger;
+    private readonly IServiceContext _managerContext;
     private readonly IPacketFactory _packetFactory;
+    private readonly Dictionary<PacketType, IPacketHandler> _handlers;
 
-    public ChatService(ILoggerFactory loggerFactory, IUserManager userManager, IPacketFactory packetFactory)
+    public ChatService(IObjectFactoryHelper objectFactory, IServiceContext managerContext, IPacketFactory packetFactory)
     {
-        _userManager = userManager;
+        _logger = LoggerFactoryHelper.CreateLogger<ChatService>();
+        _managerContext = managerContext;
         _packetFactory = packetFactory;
-        _channels.TryAdd(1, new ChatChannel(loggerFactory.CreateLogger<ChatChannel>(), _packetFactory));
+        _handlers = new Dictionary<PacketType, IPacketHandler>
+        {
+            { PacketType.ChatMessage, objectFactory.Create<ChatMessageHandler>() },
+        };
     }
 
-    public async Task<bool> AddUser(string userName, ISession session)
+    public IPacketHandler GetHandler(PacketType type)
     {
-        _logger.LogDebug("Adding user: {UserName}, SessionId: {SessionId}", userName, session.SessionId);
-
-        if (!_userManager.TryInsertUser(userName, session, out var user))
-        {
-            return false;
-        }
-
-        if (!await JoinChannel(1, user!))
-        {
-            _logger.LogError("Failed to join channel: {ChannelId}", 1);
-            _userManager.DeleteUser(session.SessionId);
-            return false;
-        }
-
-        return true;
+        throw new NotImplementedException();
     }
 
-    public async Task<bool> DeleteUser(string sessionId)
+    public Task<bool> ProcessAsync(string sessionId, PacketType packetType, ReadOnlyMemory<byte> payload)
     {
-        var user = _userManager.GetUserBySession(sessionId);
-        if (user == null)
-        {
-            _logger.LogError("Failed to delete user: {SessionId}", sessionId);
-            return false;
-        }
-
-        if (!_userManager.DeleteUser(sessionId))
-        {
-            _logger.LogError("Failed to delete user: {SessionId}", sessionId);
-            return false;
-        }
-
-        await LeaveChannel(1, user);
-
-        return true;
-    }
-
-    public async Task<bool> JoinChannel(int channelId, IChatUser user)
-    {
-        if (!_channels.TryGetValue(channelId, out var channel))
-        {
-            return false;
-        }
-
-        return await channel.TryAddMember(user);
-    }
-
-    public async Task<bool> LeaveChannel(int channelId, IChatUser user)
-    {
-        if (!_channels.TryGetValue(channelId, out var channel))
-        {
-            return false;
-        }
-
-        return await channel.TryRemoveMember(user);
-    }
-
-    public bool TryGetUserBySession(string sessionId, out IChatUser? user)
-    {
-        user = _userManager.GetUserBySession(sessionId);
-        return user != null;
-    }
-
-    public async Task SendChatMessageToChannel(int channelId, ChatMessage message)
-    {
-        if (_channels.TryGetValue(channelId, out var channel))
-        {
-            await channel.SendMessageToAll(message);
-        }
+        throw new NotImplementedException();
     }
 }

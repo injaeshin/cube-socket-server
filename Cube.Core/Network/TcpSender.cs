@@ -5,7 +5,6 @@ namespace Cube.Core.Network;
 
 public class TcpSender
 {
-    private readonly ILogger _logger;
     private readonly TcpSendChannel _sendChannel;
     private bool _isClosed = false;
 
@@ -13,7 +12,6 @@ public class TcpSender
 
     public TcpSender(ILoggerFactory loggerFactory, PoolEvent poolEvent, Func<TcpSendContext, Task> onSendCompleted)
     {
-        _logger = loggerFactory.CreateLogger<TcpSender>();
         _sendChannel = new TcpSendChannel(loggerFactory, poolEvent);
         _onSendCompleted = onSendCompleted;
     }

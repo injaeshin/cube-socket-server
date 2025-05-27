@@ -18,7 +18,7 @@ public sealed class ProcessChannel : IDisposable
     {
         _logger = loggerFactory.CreateLogger<ProcessChannel>();
         _cts = new CancellationTokenSource();
-        _channel = System.Threading.Channels.Channel.CreateUnbounded<ReceivedContext>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+        _channel = Channel.CreateUnbounded<ReceivedContext>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
         _workerTask = Task.Run(WorkerAsync);
         _onProcess = onProcess;
     }
@@ -66,9 +66,9 @@ public sealed class ProcessChannel : IDisposable
         {
             await _onProcess(packet);
         }
-        finally
+        catch (Exception e)
         {
-            packet.Return();
+            _logger.LogError(e, "[RecvQueue] {SessionId} Failed to process packet", packet.SessionId);
         }
     }
 
@@ -80,7 +80,7 @@ public sealed class ProcessChannel : IDisposable
 
         _cts.Cancel();
         _channel.Writer.TryComplete();
-        _workerTask.Wait(TimeSpan.FromSeconds(30));        
+        _workerTask.Wait(TimeSpan.FromSeconds(30));
         _cts.Dispose();
     }
 
