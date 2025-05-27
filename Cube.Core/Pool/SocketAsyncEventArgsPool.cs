@@ -1,11 +1,12 @@
 ﻿using System.Net.Sockets;
+using Cube.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Cube.Core.Pool;
 
 public class SocketAsyncEventArgsPool(ILoggerFactory loggerFactory, int maxConnections)
 {
-    private readonly BufferPool _eventArgsBuffer = new(maxConnections * CoreConsts.BUFFER_SIZE, CoreConsts.BUFFER_SIZE, loggerFactory);
+    private readonly BufferPool _eventArgsBuffer = new(loggerFactory, maxConnections * Consts.BUFFER_SIZE, Consts.BUFFER_SIZE);
     private readonly ObjectPool<SocketAsyncEventArgs> _eventArgsPool = new(() => new SocketAsyncEventArgs(), maxConnections);
     private readonly ILogger _logger = loggerFactory.CreateLogger<SocketAsyncEventArgsPool>();
 

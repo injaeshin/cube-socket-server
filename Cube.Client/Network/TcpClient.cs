@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Net.Sockets;
+using Cube.Common;
 using Cube.Core;
 using Cube.Core.Network;
 using Cube.Packet;
@@ -81,7 +82,7 @@ public class TcpClient : IDisposable
     {
         try
         {
-            var buffer = new byte[CoreConsts.BUFFER_SIZE];
+            var buffer = new byte[Consts.BUFFER_SIZE];
             while (!cancellationToken.IsCancellationRequested && _isConnected)
             {
                 if (_stream == null) break;

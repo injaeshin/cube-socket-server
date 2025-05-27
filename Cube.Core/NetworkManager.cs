@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Cube.Core.Sessions;
 using Cube.Core.Pool;
 using Cube.Core.Network;
+using Cube.Common;
 
 namespace Cube.Core;
 
@@ -40,7 +41,7 @@ public class NetworkManager : INetworkManager
         _loggerFactory = loggerFactory;
         _logger = _loggerFactory.CreateLogger<NetworkManager>();
 
-        _saeaPool = new SocketAsyncEventArgsPool(loggerFactory, CoreConsts.MAX_CONNECTIONS);
+        _saeaPool = new SocketAsyncEventArgsPool(loggerFactory, Consts.MAX_CONNECTIONS);
         _poolEvent = new PoolEvent
         {
             OnRentEventArgs = _saeaPool.Rent,

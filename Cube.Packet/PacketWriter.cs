@@ -1,3 +1,4 @@
+using Cube.Common;
 using System.Buffers;
 using System.Text;
 
@@ -10,8 +11,8 @@ public sealed class PacketWriter
     /// </summary>
     private readonly byte[] _buffer;
     private int _position;
-    private const int UDP_HEADER_SIZE = 8; // RUDP 헤더 크기 (seq, ack, type, length)
-    private const int LENGTH_SIZE = 4; // 패킷 길이 크기 (TCP 헤더에서 사용)
+    private const int UDP_HEADER_SIZE = Consts.UDP_HEADER_SIZE; // RUDP 헤더 크기 (session_id, seq, ack)
+    private const int LENGTH_SIZE = Consts.LENGTH_SIZE; // 패킷 길이 크기 (TCP 헤더에서 사용)
 
     public PacketWriter(ushort type) : this()
     {
@@ -23,7 +24,7 @@ public sealed class PacketWriter
     /// <summary>
     /// 기본 크기로 패킷 작성기 생성
     /// </summary>
-    public PacketWriter(int size = 2048)
+    public PacketWriter(int size = Consts.BUFFER_SIZE)
     {
         _buffer = ArrayPool<byte>.Shared.Rent(size);
         _position = UDP_HEADER_SIZE + LENGTH_SIZE;

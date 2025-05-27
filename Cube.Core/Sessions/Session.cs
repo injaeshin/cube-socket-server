@@ -76,7 +76,7 @@ public class Session : ISession, ISessionExecutor, ISessionNotify
 
     public void Close(ISessionClose reason)
     {
-        _logger.LogDebug("Session Close: {SessionId} - 이유: {Code}", SessionId, reason.Code);
+        _logger.LogDebug("Session Close: {Id} - Reason: {Desc}", SessionId, reason.Description);
         _transport?.Close(reason.IsGraceful);
     }
 

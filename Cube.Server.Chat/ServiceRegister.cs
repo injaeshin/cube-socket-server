@@ -9,6 +9,7 @@ using Cube.Server.Chat.Handler;
 using Cube.Server.Chat.Service;
 using Cube.Server.Chat.User;
 using Cube.Server.Chat.Helper;
+using Cube.Common.Interface;
 
 namespace Cube.Server.Chat;
 
@@ -34,6 +35,7 @@ public static class ServiceRegister
     {
         // 헬퍼 등록
         services.AddSingleton<IObjectFactoryHelper, ObjectFactoryHelper>();
+        services.AddSingleton<IPacketFactory, PacketFactory>();
 
         // 공통 서비스
         services.AddSingleton<IChatService, ChatService>();

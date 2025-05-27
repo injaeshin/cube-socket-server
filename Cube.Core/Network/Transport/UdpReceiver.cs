@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Cube.Core.Pool;
+using Cube.Common;
 
 namespace Cube.Core.Network;
 
@@ -22,7 +23,7 @@ public class UdpReceiver : IDisposable
     public UdpReceiver(ILoggerFactory loggerFactory, TransportUdpReceiveHandler receiveEvent)
     {
         _logger = loggerFactory.CreateLogger<UdpReceiver>();
-        _saeaPool = new SocketAsyncEventArgsPool(loggerFactory, CoreConsts.MAX_UDP_CONNECTIONS);
+        _saeaPool = new SocketAsyncEventArgsPool(loggerFactory, Consts.MAX_UDP_CONNECTIONS);
         _receiveEvent = receiveEvent;
     }
 

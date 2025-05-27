@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
 using Cube.Core.Network;
+using Cube.Common;
 
 namespace Cube.Core.Pool;
 
@@ -10,7 +11,7 @@ public class TransportPool
     private readonly PoolEvent _poolEvent;
     private bool _closed = false;
 
-    public TransportPool(ILoggerFactory loggerFactory, PoolEvent poolEvent, int poolSize = CoreConsts.MAX_CONNECTIONS)
+    public TransportPool(ILoggerFactory loggerFactory, PoolEvent poolEvent, int poolSize = Consts.MAX_CONNECTIONS)
     {
         _poolEvent = poolEvent;
         var returnEvent = new TransportReturnHandler

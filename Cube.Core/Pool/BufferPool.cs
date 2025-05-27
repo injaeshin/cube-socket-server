@@ -14,7 +14,7 @@ public class BufferPool
     private readonly ILogger _logger;
     private bool _closed;
 
-    public BufferPool(int totalBytes, int bufferSize, ILoggerFactory loggerFactory)
+    public BufferPool(ILoggerFactory loggerFactory, int totalBytes, int bufferSize)
     {
         _totalBytes = totalBytes;
         _bufferSize = bufferSize;

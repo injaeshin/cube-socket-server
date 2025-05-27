@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Net.Sockets;
 using Cube.Common.Interface;
 using Cube.Core.Network;
+using Cube.Common;
 
 namespace Cube.Core.Sessions;
 
@@ -51,7 +52,7 @@ public abstract class SessionManager<T>(ILoggerFactory loggerFactory, SessionHea
     {
         if (!_isRunning) throw new InvalidOperationException("SessionManager is not running");
 
-        if (_sessions.Count >= CoreConsts.MAX_CONNECTIONS)
+        if (_sessions.Count >= Consts.MAX_CONNECTIONS)
         {
             _logger.LogWarning("세션 생성 실패: 최대 접속 수 초과");
             return false;

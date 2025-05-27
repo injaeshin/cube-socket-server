@@ -1,9 +1,14 @@
-﻿namespace Cube.Core;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 
-public class CoreConsts
+namespace Cube.Common;
+
+public class Consts
 {
     // 네트워크 설정
-    public const int PORT = 7777;
     public const int LISTEN_BACKLOG = 100;
     public const int MAX_CONNECTIONS = 1000;
     public const int MAX_UDP_CONNECTIONS = 100;
@@ -13,7 +18,7 @@ public class CoreConsts
     public const int PING_TIMEOUT = 5;           // 타임아웃 (초)
 
     // 버퍼 크기
-    public const int BUFFER_SIZE = 4096;        // 패킷 버퍼 크기
+    public const int BUFFER_SIZE = 2048;        // 패킷 버퍼 크기
     public const int SEND_CHUNK_SIZE = 2048;    // 전송 청크 크기
 
     // 패킷 크기

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
 using Cube.Core.Pool;
+using Cube.Common;
 
 namespace Cube.Core.Network;
 
@@ -19,7 +20,7 @@ public class TcpAcceptor : IDisposable
     public TcpAcceptor(ILoggerFactory loggerFactory, Func<Socket, Task> onConnected)
     {
         _logger = loggerFactory.CreateLogger<TcpAcceptor>();
-        _saeaPool = new SocketAsyncEventArgsPool(loggerFactory, CoreConsts.LISTEN_BACKLOG);
+        _saeaPool = new SocketAsyncEventArgsPool(loggerFactory, Consts.LISTEN_BACKLOG);
         _onClientConnected = onConnected;
     }
 
@@ -29,7 +30,7 @@ public class TcpAcceptor : IDisposable
         _listenSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
         _listenSocket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.NoDelay, true);
         _listenSocket.Bind(new IPEndPoint(IPAddress.Any, port));
-        _listenSocket.Listen(CoreConsts.LISTEN_BACKLOG);
+        _listenSocket.Listen(Consts.LISTEN_BACKLOG);
 
         DoAccept();
         _logger.LogInformation("TCP 서버 시작 (포트: {Port})", ((IPEndPoint)_listenSocket.LocalEndPoint!).Port);

@@ -1,8 +1,9 @@
+using Cube.Common;
 using System.Buffers;
 
 namespace Cube.Core.Network;
 
-public class PacketBuffer(int size = CoreConsts.BUFFER_SIZE)
+public class PacketBuffer(int size = Consts.BUFFER_SIZE)
 {
     private readonly int _bufferSize = size;
     private readonly byte[] _buffer = new byte[size];
@@ -72,26 +73,26 @@ public class PacketBuffer(int size = CoreConsts.BUFFER_SIZE)
         payload = ReadOnlyMemory<byte>.Empty;
         rentedBuffer = null;
 
-        if (DataSize() < CoreConsts.LENGTH_SIZE)
+        if (DataSize() < Consts.LENGTH_SIZE)
             return false;
 
         ushort bodyLength = ReadUInt16FromBuffer(0);
-        if (bodyLength < CoreConsts.TYPE_SIZE || bodyLength > CoreConsts.BUFFER_SIZE - CoreConsts.TCP_HEADER_SIZE)
+        if (bodyLength < Consts.TYPE_SIZE || bodyLength > Consts.BUFFER_SIZE - Consts.TCP_HEADER_SIZE)
             return false;
 
-        int totalPacketSize = CoreConsts.LENGTH_SIZE + bodyLength;  // 길이 + (타입 + 페이로드)
+        int totalPacketSize = Consts.LENGTH_SIZE + bodyLength;  // 길이 + (타입 + 페이로드)
         if (DataSize() < totalPacketSize)
             return false;
 
         // 타입 읽기
-        packetType = ReadUInt16FromBuffer(CoreConsts.LENGTH_SIZE);
+        packetType = ReadUInt16FromBuffer(Consts.TYPE_SIZE);
 
         // 페이로드 크기 (타입 제외)
-        int payloadLength = bodyLength - CoreConsts.TYPE_SIZE;
+        int payloadLength = bodyLength - Consts.TYPE_SIZE;
         rentedBuffer = ArrayPool<byte>.Shared.Rent(payloadLength);
 
         // 페이로드 시작 위치 (길이 + 타입 다음부터)
-        int payloadStart = (_readPos + CoreConsts.LENGTH_SIZE + CoreConsts.TYPE_SIZE) % _bufferSize;
+        int payloadStart = (_readPos + Consts.LENGTH_SIZE + Consts.TYPE_SIZE) % _bufferSize;
         if (_bufferSize - payloadStart >= payloadLength)
         {
             _buffer.AsSpan(payloadStart, payloadLength).CopyTo(rentedBuffer.AsSpan(0, payloadLength));
