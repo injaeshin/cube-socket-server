@@ -1,7 +1,5 @@
 ﻿using Microsoft.Extensions.Hosting;
 
-using Cube.Server.Chat.Helper;
-
 namespace Cube.Server.Chat;
 
 public class Program

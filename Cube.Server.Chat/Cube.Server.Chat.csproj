@@ -16,7 +16,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Cube.Common\Cube.Common.csproj" />
     <ProjectReference Include="..\Cube.Core\Cube.Core.csproj" />
-    <ProjectReference Include="..\Cube.Network\Cube.Network.csproj" />
+    <ProjectReference Include="..\Cube.Packet\Cube.Packet.csproj" />
   </ItemGroup>
 
 </Project>

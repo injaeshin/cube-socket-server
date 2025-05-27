@@ -1,10 +1,9 @@
 ﻿using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
-
-using Cube.Network;
+using Cube.Core;
 using Cube.Core.Sessions;
+using Cube.Common.Interface;
 using Cube.Server.Chat.Helper;
-
 
 namespace Cube.Server.Chat.User;
 
@@ -127,7 +126,7 @@ public class UserManager : IUserManager
     {
         foreach (var user in _users.Values)
         {
-            user.Session?.Close(DisconnectReason.ApplicationRequest);
+            user.Session.Close(new SessionClose(SocketDisconnect.ApplicationRequest));
         }
     }
 }

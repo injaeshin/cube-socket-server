@@ -1,28 +1,30 @@
 using Microsoft.Extensions.Logging;
-
-using Cube.Network;
-using Cube.Network.PacketIO;
-using Cube.Core.Handler;
+using Cube.Core;
 using Cube.Core.Sessions;
-using Cube.Common.Shared;
+using Cube.Common.Interface;
+using Cube.Packet;
 using Cube.Server.Chat.Service;
 using Cube.Server.Chat.Helper;
 
-namespace Server.Chat.Handler;
 
-public class LoginHandler(IChatService chatService) : IPacketHandler
+
+
+
+namespace Cube.Server.Chat.Handler;
+
+public class LoginHandler(IChatService chatService) : PayloadPacketHandlerBase
 {
     private readonly ILogger _logger = LoggerFactoryHelper.CreateLogger<LoginHandler>();
     private readonly IChatService _chatService = chatService;
 
-    public PacketType Type => PacketType.Login;
+    public override PacketType Type => PacketType.Login;
 
-    public async Task<bool> HandleAsync(ISession session, ReadOnlyMemory<byte> packet)
+    public override async Task<bool> HandleAsync(ISession session, ReadOnlyMemory<byte> packet)
     {
         if (session.IsAuthenticated)
         {
             _logger.LogError("Login packet received from authenticated session: {SessionId}", session.SessionId);
-            session.Close(DisconnectReason.NotAuthorized);
+            session.Close(new SessionClose(SocketDisconnect.NotAuthorized));
             return false;
         }
 
@@ -45,15 +47,14 @@ public class LoginHandler(IChatService chatService) : IPacketHandler
             if (!await _chatService.AddUser(id, session))
             {
                 _logger.LogError("Failed to insert user: {SessionId}", session.SessionId);
-                session.Close(DisconnectReason.Failed);
+                session.Close(new SessionClose(SocketDisconnect.Failed));
                 return false;
             }
 
-            session.Authenticate();
+            session.SetAuthenticated();
 
-            var payload = new PacketWriter();
-            payload.WriteType((ushort)PacketType.LoginSuccess);
-            await session.SendAsync(payload);
+            var (data, rentedBuffer) = new PacketWriter().WriteType((ushort)PacketType.LoginSuccess).ToTcpPacket();
+            await session.SendAsync(data, rentedBuffer);
 
             return true;
         }

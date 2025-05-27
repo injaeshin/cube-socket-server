@@ -1,9 +1,6 @@
+using Cube.Core.Network;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
-using System.Diagnostics;
-
-using Cube.Network.Channel;
-using Cube.Network.Context;
 
 
 namespace Cube.Tests.Network;
@@ -41,7 +38,7 @@ public class ProcessChannelTests
 
         // Act
         var data = new byte[] { 1, 2, 3, 4 };
-        await channel.EnqueueAsync(new ReceivedContext("t_session", data, null));
+        await channel.EnqueueAsync(new ReceivedContext("t_session", 1, data, null));
 
         // Allow time for processing
         await Task.Delay(100);

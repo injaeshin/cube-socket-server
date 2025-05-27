@@ -1,22 +1,20 @@
 using Microsoft.Extensions.Logging;
-
-using Cube.Network.Channel;
-using Cube.Network.Context;
+using Cube.Core;
 using Cube.Core.Sessions;
-using Cube.Core.Dispatcher;
+using Cube.Common.Interface;
+using Cube.Packet;
+using Cube.Core.Network;
 using Cube.Server.Chat.Helper;
-using Cube.Common.Shared;
-using Server.Chat.Handler;
 using Cube.Server.Chat.Handler;
-using Cube.Network.PacketIO;
-using Cube.Network;
+
 
 namespace Cube.Server.Chat.Processor;
 
 public interface IPacketProcessor
 {
-    Task EnqueueAsync(string sessionId, ReadOnlyMemory<byte> data, byte[]? rentedBuffer);
+    Task OnReceivedAsync(ReceivedContext context);
     Task ExecuteAsync(ReceivedContext context);
+    Task OnSessionClosed(ISession session);
 }
 
 public class PacketProcessor : IPacketProcessor
@@ -25,6 +23,9 @@ public class PacketProcessor : IPacketProcessor
     private readonly ProcessChannel _processChannel;
     private readonly ISessionManager _sessionManager;
     private readonly IPacketDispatcher _packetDispatcher;
+
+    private LogoutHandler? _logoutHandler = null;
+
     public PacketProcessor(ILoggerFactory loggerFactory, IObjectFactoryHelper objectFactory, ISessionManager sessionManager)
     {
         _logger = loggerFactory.CreateLogger<PacketProcessor>();
@@ -35,6 +36,13 @@ public class PacketProcessor : IPacketProcessor
         RegisterHandler(objectFactory);
     }
 
+    public async Task OnSessionClosed(ISession session)
+    {
+        if (_logoutHandler == null) throw new InvalidOperationException("Logout handler is not registered");
+
+        await _logoutHandler.HandleAsync(session);
+    }
+
     public async Task ExecuteAsync(ReceivedContext context)
     {
         if (!_sessionManager.TryGetSession(context.SessionId, out var session) || session == null)
@@ -43,24 +51,24 @@ public class PacketProcessor : IPacketProcessor
             return;
         }
 
-        if (!session.IsConnectionAlive())
+        if (!session.IsConnected)
         {
             _logger.LogError("Session is not alive: {SessionId}", context.SessionId);
-            session.Close(DisconnectReason.NotConnected);
+            session.Close(new SessionClose(SocketDisconnect.NotConnected));
             return;
         }
 
-        if (!PacketHelper.TryGetPacketType(context.Data, out var type))
+        if (!PacketHelper.TryGetPacketType(context.Payload, out var type))
         {
             _logger.LogError("Invalid packet type / {SessionId}", context.SessionId);
-            session.Close(DisconnectReason.InvalidPacket);
+            session.Close(new SessionClose(SocketDisconnect.InvalidPacket));
             return;
         }
 
         if (type > 0x0003 && !session.IsAuthenticated)
         {
             _logger.LogError("Session is not authenticated: {SessionId}", context.SessionId);
-            session.Close(DisconnectReason.NotAuthenticated);
+            session.Close(new SessionClose(SocketDisconnect.NotAuthenticated));
             return;
         }
 
@@ -68,27 +76,34 @@ public class PacketProcessor : IPacketProcessor
         if (!_packetDispatcher.TryGetHandler(packetType, out var handler))
         {
             _logger.LogError("Handler not found: {PacketType}", packetType);
-            session.Close(DisconnectReason.InvalidType);
+            session.Close(new SessionClose(SocketDisconnect.InvalidType));
             return;
         }
 
         _logger.LogInformation("PacketProcessor ExecuteAsync: {PacketType}", packetType);
 
-        await handler.HandleAsync(session, context.Data);
+        if (handler is IPayloadPacketHandler payloadHandler)
+        {
+            await payloadHandler.HandleAsync(session, context.Payload);
+            return;
+        }
+
+        await handler.HandleAsync(session);
     }
 
-    public async Task EnqueueAsync(string sessionId, ReadOnlyMemory<byte> data, byte[]? rentedBuffer)
+    public async Task OnReceivedAsync(ReceivedContext context)
     {
-        var context = new ReceivedContext(sessionId, data, rentedBuffer);
         await _processChannel.EnqueueAsync(context);
     }
 
     private void RegisterHandler(IObjectFactoryHelper objectFactory)
     {
-        _packetDispatcher.Register(PacketType.Login, objectFactory.Create<LoginHandler>());
-        _packetDispatcher.Register(PacketType.Logout, objectFactory.Create<LogoutHandler>());
-        _packetDispatcher.Register(PacketType.ChatMessage, objectFactory.Create<ChatMessageHandler>());
-    }
+        _packetDispatcher.RegisterHandler(PacketType.Login, objectFactory.Create<LoginHandler>());
 
+        _logoutHandler = objectFactory.Create<LogoutHandler>();
+        _packetDispatcher.RegisterHandler(PacketType.Logout, _logoutHandler);
+
+        _packetDispatcher.RegisterHandler(PacketType.ChatMessage, objectFactory.Create<ChatMessageHandler>());
+    }
 }
 

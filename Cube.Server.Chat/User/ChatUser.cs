@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using Cube.Core.Sessions;
+using Cube.Common.Interface;
 using Cube.Server.Chat.Channel;
 
 namespace Cube.Server.Chat.User;

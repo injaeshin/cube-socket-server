@@ -1,25 +1,23 @@
 using Microsoft.Extensions.Logging;
 
-using Cube.Network;
-using Cube.Network.PacketIO;
+using Cube.Core;
 using Cube.Core.Sessions;
-using Cube.Core.Handler;
-using Cube.Common.Shared;
+using Cube.Common.Interface;
+using Cube.Packet;
 using Cube.Server.Chat.Service;
 using Cube.Server.Chat.Helper;
 using Cube.Server.Chat.Model;
 
+namespace Cube.Server.Chat.Handler;
 
-namespace Server.Chat.Handler;
-
-public class ChatMessageHandler(IChatService chatService) : IPacketHandler
+public class ChatMessageHandler(IChatService chatService) : PayloadPacketHandlerBase
 {
     private readonly ILogger _logger = LoggerFactoryHelper.CreateLogger<ChatMessageHandler>();
     private readonly IChatService _chatService = chatService;
 
-    public PacketType Type => PacketType.ChatMessage;
+    public override PacketType Type => PacketType.ChatMessage;
 
-    public async Task<bool> HandleAsync(ISession session, ReadOnlyMemory<byte> packet)
+    public override async Task<bool> HandleAsync(ISession session, ReadOnlyMemory<byte> packet)
     {
         try
         {
@@ -30,7 +28,7 @@ public class ChatMessageHandler(IChatService chatService) : IPacketHandler
             if (!_chatService.TryGetUserBySession(session.SessionId, out var user))
             {
                 _logger.LogError("User not found for session: {SessionId}", session.SessionId);
-                session.Close(DisconnectReason.NotFound);
+                session.Close(new SessionClose(SocketDisconnect.NotFound));
                 return false;
             }
 

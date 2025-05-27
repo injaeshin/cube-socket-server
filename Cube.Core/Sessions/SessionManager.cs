@@ -1,11 +1,15 @@
+using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Net.Sockets;
-using Microsoft.Extensions.Logging;
-using Cube.Network;
-using Cube.Network.Transport;
-
+using Cube.Common.Interface;
+using Cube.Core.Network;
 
 namespace Cube.Core.Sessions;
+
+public interface ISessionCreator
+{
+    bool CreateAndRunSession(Socket socket, ITransport transport);
+}
 
 public interface ISessionManager : ISessionCreator
 {
@@ -19,11 +23,11 @@ public interface ISessionManager : ISessionCreator
     // void SetEndPointToSessionId(EndPoint ep, string sessionId);
     // void RemoveEndPointToSessionId(EndPoint ep);
 
-    void Run(SessionIOEvent sessionIOEvent);
+    void Run(SessionIOHandler sessionIOEvent);
     //void Stop();
 }
 
-public abstract class SessionManager<T>(ILoggerFactory loggerFactory, SessionHeartbeat heartbeatMonitor) : ISessionManager, ISessionCreator where T : ISession, ISessionTransport
+public abstract class SessionManager<T>(ILoggerFactory loggerFactory, SessionHeartbeat heartbeatMonitor) : ISessionManager, ISessionCreator where T : ISession, ISessionExecutor
 {
     private readonly ILogger _logger = loggerFactory.CreateLogger<SessionManager<T>>();
     private readonly SessionHeartbeat _heartbeatMonitor = heartbeatMonitor;
@@ -32,14 +36,14 @@ public abstract class SessionManager<T>(ILoggerFactory loggerFactory, SessionHea
     // private readonly ConcurrentDictionary<string, UdpSessionState> _UdpSessions = new();
     // private readonly ConcurrentDictionary<EndPoint, string> _endPointToSessionId = new();
 
-    private SessionEvent _eventPreset = null!;
-    protected abstract T CreateNewSession(Socket socket, SessionEvent events);
+    private SessionEventHandler _eventHandler = null!;
+    protected abstract T CreateNewSession(Socket socket, SessionEventHandler events);
     private bool _isRunning = false;
 
-    public void Run(SessionIOEvent sessionIOEvent)
+    public void Run(SessionIOHandler sessionIOEvent)
     {
         if (_isRunning) throw new InvalidOperationException("SessionManager is already running");
-        _eventPreset = CreateSessionEvents(sessionIOEvent);
+        _eventHandler = CreateSessionEvents(sessionIOEvent);
         _isRunning = true;
     }
 
@@ -47,7 +51,7 @@ public abstract class SessionManager<T>(ILoggerFactory loggerFactory, SessionHea
     {
         if (!_isRunning) throw new InvalidOperationException("SessionManager is not running");
 
-        if (_sessions.Count >= NetConsts.MAX_CONNECTIONS)
+        if (_sessions.Count >= CoreConsts.MAX_CONNECTIONS)
         {
             _logger.LogWarning("세션 생성 실패: 최대 접속 수 초과");
             return false;
@@ -55,10 +59,10 @@ public abstract class SessionManager<T>(ILoggerFactory loggerFactory, SessionHea
 
         try
         {
-            var session = CreateNewSession(socket, _eventPreset);
+            var session = CreateNewSession(socket, _eventHandler);
             _sessions.TryAdd(session.SessionId, session);
 
-            session.BindTransport(transport);
+            session.Bind(transport);
             session.Run();
         }
         catch (Exception ex)
@@ -70,18 +74,19 @@ public abstract class SessionManager<T>(ILoggerFactory loggerFactory, SessionHea
         return true;
     }
 
-    private SessionEvent CreateSessionEvents(SessionIOEvent ioEvent)
+    private SessionEventHandler CreateSessionEvents(SessionIOHandler ioEvent)
     {
-        return new SessionEvent
+        return new SessionEventHandler
         {
-            Resource = new SessionResourceEvent
+            Resource = new SessionResourceHandler
             {
                 OnReturnSession = (session) =>
                 {
+                    _eventHandler.IO.OnSessionClosed(session);
                     _sessions.TryRemove(session.SessionId, out _);
                 }
             },
-            KeepAlive = new SessionKeepAliveEvent
+            KeepAlive = new SessionKeepAliveHandler
             {
                 OnRegister = _heartbeatMonitor.RegisterSession,
                 OnUnregister = _heartbeatMonitor.UnregisterSession,

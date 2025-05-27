@@ -18,5 +18,5 @@ public class ChatSessionManager : SessionManager<ChatSession>, IChatSessionManag
         _logger = LoggerFactoryHelper.CreateLogger<ChatSessionManager>();
     }
 
-    protected override ChatSession CreateNewSession(Socket socket, SessionEvent events) => new(events);
+    protected override ChatSession CreateNewSession(Socket socket, SessionEventHandler events) => new(events);
 }

@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Logging;
 
 using Cube.Core.Sessions;
+using Cube.Common.Interface;
 using Cube.Server.Chat.Helper;
+using Cube.Packet;
 
 namespace Cube.Server.Chat.Session;
 
@@ -9,11 +11,11 @@ public interface IChatSession : ISession
 {
 }
 
-public class ChatSession : NetSession, IChatSession
+public class ChatSession : Core.Sessions.Session, IChatSession
 {
     private readonly ILogger _logger;
 
-    public ChatSession(SessionEvent events) : base(LoggerFactoryHelper.GetLoggerFactory(), events)
+    public ChatSession(SessionEventHandler events) : base(LoggerFactoryHelper.GetLoggerFactory(), events)
     {
         _logger = LoggerFactoryHelper.CreateLogger<ChatSession>();
     }
@@ -28,9 +30,9 @@ public class ChatSession : NetSession, IChatSession
         base.OnDisconnected(session, isGraceful);
     }
 
-    protected override bool OnPreProcessReceivedAsync(ReadOnlyMemory<byte> payload)
+    protected override bool OnPreProcessReceivedAsync(ushort packetType, ReadOnlyMemory<byte> payload)
     {
-        if (!base.OnPreProcessReceivedAsync(payload))
+        if (!base.OnPreProcessReceivedAsync(packetType, payload))
         {
             return false;
         }

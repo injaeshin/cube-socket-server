@@ -1,8 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Order;
-using Cube.Network.Channel;
-using Cube.Network.Context;
+using Cube.Core.Network;
 
 namespace Cube.Benchmark.Network;
 
@@ -29,7 +28,7 @@ public class ProcessChannelBenchmark
         _loggerFactory = LoggerFactory.Create(builder => builder.SetMinimumLevel(LogLevel.Warning).AddConsole());
         _testData = new byte[MessageSize];
         new Random(42).NextBytes(_testData);
-        
+
         // 채널 미리 생성
         _completionSource = new TaskCompletionSource();
         _processedCount = 0;
@@ -52,7 +51,7 @@ public class ProcessChannelBenchmark
         // 순수하게 메시지 처리만 벤치마크
         for (int i = 0; i < MessageCount; i++)
         {
-            await _channel.EnqueueAsync(new ReceivedContext($"session_{i}", _testData, null));
+            await _channel.EnqueueAsync(new ReceivedContext($"session_{i}", (ushort)i, _testData, null));
         }
         await _completionSource.Task;
     }

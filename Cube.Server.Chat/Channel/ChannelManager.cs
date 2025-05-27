@@ -1,22 +1,29 @@
 using System.Collections.Concurrent;
-using Cube.Common.Shared;
-using Cube.Network.PacketIO;
+using Cube.Common.Interface;
 using Cube.Server.Chat.Model;
 using Cube.Server.Chat.User;
+using Microsoft.Extensions.Logging;
 
 namespace Cube.Server.Chat.Channel;
 
-public class ChatChannel(int channelId, string channelName)
+public class ChatChannel(ILogger<ChatChannel> logger, IPacketFactory packetFactory)
 {
-    //private readonly ILogger _logger = LoggerFactoryHelper.Instance.CreateLogger<ChatChannel>();
+    private readonly ILogger<ChatChannel> _logger = logger;
     private readonly ConcurrentDictionary<string, IChatUser> _members = new();
+    private readonly IPacketFactory _packetFactory = packetFactory;
 
-    private readonly int _channelId = channelId;
-    private readonly string _channelName = channelName;
+    private int _channelId = 0;
+    private string _channelName = string.Empty;
     public int ChannelId => _channelId;
     public string ChannelName => _channelName;
 
     public int Count => _members.Count;
+
+    public void SetChannelId(int channelId, string channelName)
+    {
+        _channelId = channelId;
+        _channelName = channelName;
+    }
 
     public async Task<bool> TryAddMember(IChatUser user)
     {
@@ -25,8 +32,7 @@ public class ChatChannel(int channelId, string channelName)
             return false;
         }
 
-        var packet = new PacketWriter();
-        PacketWriteMessage(packet, user.Name, $"{user.Name} 님이 채널에 참여했습니다.");
+        var (payload, rentedBuffer) = _packetFactory.CreateChatMessagePacket(user.Name, $"{user.Name} 님이 채널에 참여했습니다.");
 
         foreach (var member in _members.Values)
         {
@@ -35,12 +41,12 @@ public class ChatChannel(int channelId, string channelName)
                 continue;
             }
 
-            if (!member.Session.IsConnectionAlive())
+            if (!member.Session.IsConnected)
             {
                 continue;
             }
 
-            await SendMessageAsync(member, packet);
+            await SendMessageAsync(member, payload, rentedBuffer);
         }
 
         return true;
@@ -53,8 +59,7 @@ public class ChatChannel(int channelId, string channelName)
             return false;
         }
 
-        var packet = new PacketWriter();
-        PacketWriteMessage(packet, user.Name, $"{user.Name} 님이 채널에서 나갔습니다.");
+        var (payload, rentedBuffer) = _packetFactory.CreateChatMessagePacket(user.Name, $"{user.Name} 님이 채널에서 나갔습니다.");
 
         foreach (var member in _members.Values)
         {
@@ -63,12 +68,12 @@ public class ChatChannel(int channelId, string channelName)
                 continue;
             }
 
-            if (!member.Session.IsConnectionAlive())
+            if (!member.Session.IsConnected)
             {
                 continue;
             }
 
-            await SendMessageAsync(member, packet);
+            await SendMessageAsync(member, payload, rentedBuffer);
         }
 
         return true;
@@ -81,45 +86,36 @@ public class ChatChannel(int channelId, string channelName)
 
     public async Task SendMessageTo(string sender, string message, string target)
     {
+        var (payload, rentedBuffer) = _packetFactory.CreateChatMessagePacket(sender, message);
+
         if (_members.TryGetValue(target, out var member))
         {
-            if (!member.Session.IsConnectionAlive())
+            if (!member.Session.IsConnected)
             {
                 return;
             }
 
-            var packet = new PacketWriter();
-            PacketWriteMessage(packet, sender, message);
-
-            await SendMessageAsync(member, packet);
+            await SendMessageAsync(member, payload, rentedBuffer);
         }
     }
 
     public async Task SendMessageToAll(ChatMessage message)
     {
-        var packet = new PacketWriter();
-        PacketWriteMessage(packet, message.Sender, message.Message);
+        var (payload, rentedBuffer) = _packetFactory.CreateChatMessagePacket(message.Sender, message.Message);
 
         foreach (var member in _members.Values)
         {
-            if (!member.Session.IsConnectionAlive())
+            if (!member.Session.IsConnected)
             {
                 continue;
             }
 
-            await SendMessageAsync(member, packet);
+            await SendMessageAsync(member, payload, rentedBuffer);
         }
     }
 
-    private static void PacketWriteMessage(PacketWriter packet, string sender, string message)
+    private async Task SendMessageAsync(IChatUser target, Memory<byte> payload, byte[]? rentedBuffer)
     {
-        packet.WriteType((ushort)PacketType.ChatMessage);
-        packet.WriteString(sender);
-        packet.WriteString(message);
-    }
-
-    private static async Task SendMessageAsync(IChatUser target, PacketWriter packetWriter)
-    {
-        await target.Session.SendAsync(packetWriter);
+        await target.Session.SendAsync(payload, rentedBuffer);
     }
 }

@@ -1,11 +1,12 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
-using Cube.Core.Sessions;
 
+using Cube.Common.Interface;
 using Cube.Server.Chat.Helper;
 using Cube.Server.Chat.User;
 using Cube.Server.Chat.Model;
 using Cube.Server.Chat.Channel;
+
 
 namespace Cube.Server.Chat.Service;
 
@@ -25,11 +26,13 @@ public class ChatService : IChatService
     private readonly ILogger _logger = LoggerFactoryHelper.CreateLogger<ChatService>();
     private readonly ConcurrentDictionary<int, ChatChannel> _channels = new();
     private readonly IUserManager _userManager;
+    private readonly IPacketFactory _packetFactory;
 
-    public ChatService(IUserManager userManager)
+    public ChatService(ILoggerFactory loggerFactory, IUserManager userManager, IPacketFactory packetFactory)
     {
         _userManager = userManager;
-        _channels.TryAdd(1, new ChatChannel(1, "General"));
+        _packetFactory = packetFactory;
+        _channels.TryAdd(1, new ChatChannel(loggerFactory.CreateLogger<ChatChannel>(), _packetFactory));
     }
 
     public async Task<bool> AddUser(string userName, ISession session)

@@ -5,7 +5,7 @@ namespace Cube.Server.Chat.Helper;
 public interface IObjectFactoryHelper
 {
     T Create<T>() where T : notnull;
-    T Create<T>(params object[] parameters) where T : notnull;
+    T CreateWithParameters<T>(params object[] parameters) where T : notnull;
 }
 
 public class ObjectFactoryHelper(IServiceProvider serviceProvider) : IObjectFactoryHelper
@@ -17,7 +17,7 @@ public class ObjectFactoryHelper(IServiceProvider serviceProvider) : IObjectFact
         return _serviceProvider.GetRequiredService<T>();
     }
 
-    public T Create<T>(params object[] parameters) where T : notnull
+    public T CreateWithParameters<T>(params object[] parameters) where T : notnull
     {
         return ActivatorUtilities.CreateInstance<T>(_serviceProvider, parameters);
     }

@@ -1,19 +1,17 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Cube.Network;
-using Cube.Network.PacketIO;
-using Cube.Common.Shared;
-
+using Cube.Common.Interface;
 
 namespace Cube.Core.Sessions;
 
-public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
+public class SessionHeartbeat(ILogger<SessionHeartbeat> logger, IPacketFactory packetFactory) : IHostedService
 {
     private readonly ILogger<SessionHeartbeat> _logger = logger;
-    private readonly ConcurrentDictionary<string, SessionInfo> _sessions = new();
-    private readonly TimeSpan _heartbeatInterval = TimeSpan.FromSeconds(15);
-    private readonly TimeSpan _pingTimeout = TimeSpan.FromSeconds(5);
+    private readonly IPacketFactory _packetFactory = packetFactory;
+    private readonly ConcurrentDictionary<string, HeartbeatState> _sessions = new();
+    private readonly TimeSpan _heartbeatInterval = TimeSpan.FromSeconds(CoreConsts.HEARTBEAT_INTERVAL);
+    private readonly TimeSpan _pingTimeout = TimeSpan.FromSeconds(CoreConsts.PING_TIMEOUT);
     private Task? _workTask;
     private CancellationTokenSource _cts = null!;
 
@@ -21,7 +19,7 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
     {
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _workTask = WorkAsync(_cts.Token);
-        _logger.LogDebug("Session heartbeat monitor started");
+        _logger.LogDebug("Session heartbeat monitor started - Hashcode: {hashcode}", this.GetHashCode());
         return Task.CompletedTask;
     }
 
@@ -45,20 +43,13 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
         }
 
         _cts.Dispose();
-        _logger.LogDebug("Session heartbeat monitor stopped");
+        _logger.LogDebug("Session heartbeat monitor stopped - Hashcode: {hashcode}", this.GetHashCode());
     }
 
     public void RegisterSession(ISession session)
     {
-        _sessions[session.SessionId] = new SessionInfo
-        {
-            Session = session,
-            LastActivity = DateTime.UtcNow,
-            LastPingTime = DateTime.UtcNow,
-            State = SessionState.Active,
-        };
-
-        _logger.LogInformation("Session {sessionId} registered", session.SessionId);
+        _sessions[session.SessionId] = new HeartbeatState(session);
+        _logger.LogInformation("Session {sessionId} registered - Hashcode: {hashcode}", session.SessionId, this.GetHashCode());
     }
 
     public void UnregisterSession(string sessionId)
@@ -68,18 +59,18 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
             _logger.LogError("Session {sessionId} not found", sessionId);
         }
 
-        _logger.LogInformation("Session {sessionId} unregistered", sessionId);
+        _logger.LogInformation("Session {sessionId} unregistered - Hashcode: {hashcode}", sessionId, this.GetHashCode());
     }
 
     public void UpdateSessionActivity(string sessionId)
     {
-        if (_sessions.TryGetValue(sessionId, out var info))
+        if (_sessions.TryGetValue(sessionId, out var s))
         {
-            info.LastActivity = DateTime.UtcNow;
+            s.LastActivity = DateTime.UtcNow;
 
-            if (info.State == SessionState.PingSent)
+            if (s.IsPingSent)
             {
-                info.State = SessionState.Active;
+                s.SetActive();
             }
         }
     }
@@ -90,21 +81,22 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
         {
             var now = DateTime.UtcNow;
             var sessionToProcess = _sessions.ToArray();
+            _logger.LogInformation("Checking session heartbeat - Hashcode: {hashcode}", this.GetHashCode());
 
-            foreach (var (session, info) in sessionToProcess)
+            foreach (var (_, ss) in sessionToProcess)
             {
-                switch (info.State)
+                switch (ss.StateType)
                 {
-                    case SessionState.Active:
-                        if (now - info.LastActivity > _heartbeatInterval)
+                    case HeartbeatStateType.Active:
+                        if (now - ss.LastActivity > _heartbeatInterval)
                         {
-                            await SendPingAsync(info);
+                            await SendPingAsync(ss);
                         }
                         break;
-                    case SessionState.PingSent:
-                        if (now - info.LastPingTime > _pingTimeout)
+                    case HeartbeatStateType.PingSent:
+                        if (now - ss.LastPingTime > _pingTimeout)
                         {
-                            CloseTimeoutSession(session, info);
+                            CloseTimeoutSession(ss);
                         }
                         break;
                 }
@@ -137,58 +129,58 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
         }
     }
 
-    private async Task SendPingAsync(SessionInfo info)
+    private async Task SendPingAsync(HeartbeatState hs)
     {
         try
         {
-            if (!info.Session.IsConnectionAlive())
+            if (!hs.Session.IsConnected)
             {
-                UnregisterSession(info.Session.SessionId);
+                UnregisterSession(hs.Session.SessionId);
                 return;
             }
 
-            var payload = new PacketWriter((ushort)PacketType.Ping);
-            await info.Session.SendAsync(payload);
+            var (payload, rentedBuffer) = _packetFactory.CreatePingPacket();
+            await hs.Session.SendAsync(payload, rentedBuffer);
 
-            info.LastPingTime = DateTime.UtcNow;
-            info.State = SessionState.PingSent;
-            _logger.LogDebug("Sent ping to session {sessionId}", info.Session.SessionId);
+            hs.LastPingTime = DateTime.UtcNow;
+            hs.SetPingSent();
+            _logger.LogDebug("Sent ping to session {sessionId}", hs.Session.SessionId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error sending ping to session {sessionId}", info.Session.SessionId);
-            CloseTimeoutSession(info.Session.SessionId, info);
+            _logger.LogError(ex, "Error sending ping to session {sessionId}", hs.SessionId);
+            CloseTimeoutSession(hs);
         }
     }
 
-    private void CloseTimeoutSession(string sessionId, SessionInfo info)
+    private void CloseTimeoutSession(HeartbeatState hs)
     {
         try
         {
-            _logger.LogDebug("Closing timeout session {sessionId}", sessionId);
-            info.Session.Close(DisconnectReason.Timeout);
+            _logger.LogDebug("Closing timeout session {sessionId}", hs.SessionId);
+            hs.Session.Close(new SessionClose(SocketDisconnect.Timeout));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error closing timeout session {sessionId}", sessionId);
-        }
-        finally
-        {
-            UnregisterSession(sessionId);
+            _logger.LogError(ex, "Error closing timeout session {sessionId}", hs.SessionId);
         }
     }
 
-    private class SessionInfo
+    private class HeartbeatState(ISession session)
     {
-        public ISession Session { get; init; } = null!;
+        public ISession Session { get; init; } = session;
+        public string SessionId => Session.SessionId;
+        public HeartbeatStateType StateType { get; private set; }
+        public void SetActive() => StateType = HeartbeatStateType.Active;
+        public bool IsActive => StateType == HeartbeatStateType.Active;
+        public void SetPingSent() => StateType = HeartbeatStateType.PingSent;
+        public bool IsPingSent => StateType == HeartbeatStateType.PingSent;
+        public void SetPingReceived() => StateType = HeartbeatStateType.PingReceived;
+        public bool IsPingReceived => StateType == HeartbeatStateType.PingReceived;
+        public void SetTimeout() => StateType = HeartbeatStateType.Timeout;
+        public bool IsTimeout => StateType == HeartbeatStateType.Timeout;
+
         public DateTime LastActivity { get; set; }
         public DateTime LastPingTime { get; set; }
-        public SessionState State { get; set; }
-    }
-
-    private enum SessionState
-    {
-        Active,
-        PingSent,
     }
 }
