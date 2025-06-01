@@ -1,18 +1,30 @@
 using System.Collections.Concurrent;
+using Cube.Packet;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Cube.Common.Interface;
-using Cube.Common;
 
 namespace Cube.Core.Sessions;
 
-public class SessionHeartbeat(ILogger<SessionHeartbeat> logger, IPacketFactory packetFactory) : IHostedService
+public interface ISessionHeartbeat
+{
+    void RegisterSession(ISession session);
+    void UnregisterSession(string sessionId);
+    void UpdateSessionActivity(string sessionId);
+}
+
+public interface IHeartbeat : ISessionHeartbeat
+{
+    bool IsSessionActive(string sessionId);
+    void Close();
+}
+
+
+public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService, IHeartbeat
 {
     private readonly ILogger<SessionHeartbeat> _logger = logger;
-    private readonly IPacketFactory _packetFactory = packetFactory;
     private readonly ConcurrentDictionary<string, HeartbeatState> _sessions = new();
-    private readonly TimeSpan _heartbeatInterval = TimeSpan.FromSeconds(Consts.HEARTBEAT_INTERVAL);
-    private readonly TimeSpan _pingTimeout = TimeSpan.FromSeconds(Consts.PING_TIMEOUT);
+    private readonly TimeSpan _heartbeatInterval = TimeSpan.FromSeconds(CoreConsts.HEARTBEAT_INTERVAL);
+    private readonly TimeSpan _pingTimeout = TimeSpan.FromSeconds(CoreConsts.PING_TIMEOUT);
     private Task? _workTask;
     private CancellationTokenSource _cts = null!;
 
@@ -45,6 +57,24 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger, IPacketFactory p
 
         _cts.Dispose();
         _logger.LogDebug("Session heartbeat monitor stopped - Hashcode: {hashcode}", this.GetHashCode());
+    }
+
+    public bool IsSessionActive(string sessionId)
+    {
+        if (_sessions.TryGetValue(sessionId, out var s))
+        {
+            return s.IsActive;
+        }
+        _logger.LogWarning("Session {sessionId} not found", sessionId);
+        return false;
+    }
+
+    public void Close()
+    {
+        if (!_sessions.IsEmpty)
+        {
+            _sessions.Clear();
+        }
     }
 
     public void RegisterSession(ISession session)
@@ -106,6 +136,8 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger, IPacketFactory p
         {
             _logger.LogError(ex, "Error checking session heartbeat");
         }
+
+        await Task.CompletedTask;
     }
 
     private async Task WorkAsync(CancellationToken cancellationToken)
@@ -139,8 +171,8 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger, IPacketFactory p
                 return;
             }
 
-            var (payload, rentedBuffer) = _packetFactory.CreatePingPacket();
-            await hs.Session.SendAsync(payload, rentedBuffer);
+            var (data, rentedBuffer) = new PacketWriter(PacketType.Ping).ToTcpPacket();
+            await hs.Session.SendAsync(data, rentedBuffer);
 
             hs.LastPingTime = DateTime.UtcNow;
             hs.SetPingSent();
@@ -158,7 +190,7 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger, IPacketFactory p
         try
         {
             _logger.LogDebug("Closing timeout session {sessionId}", hs.SessionId);
-            hs.Session.Close(new SessionClose(SocketDisconnect.Timeout));
+            hs.Session.Kick(ErrorType.Timeout);
         }
         catch (Exception ex)
         {

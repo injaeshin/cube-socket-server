@@ -1,4 +1,5 @@
-using Cube.Common.Interface;
+
+using Cube.Core;
 
 namespace Cube.Server.Chat.User;
 

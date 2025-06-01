@@ -1,89 +1,67 @@
 using Microsoft.Extensions.Logging;
-using Cube.Core;
-using Cube.Core.Sessions;
-using Cube.Packet;
 using Cube.Core.Network;
-using Cube.Server.Chat.Service;
+using Cube.Core.Execution;
+using Cube.Core;
+using Cube.Packet;
 
 namespace Cube.Server.Chat.Processor;
 
-public interface IPacketProcessor
-{
-    Task ExecuteAsync(ReceivedContext context);
-    Task OnReceivedAsync(ReceivedContext context);
+public interface IPacketProcessor : IProcessor { }
 
-    Task OnSessionClosed(string sessionId);
-}
-
-public class PacketProcessor : IPacketProcessor
+public class PacketProcessor : Core.Execution.Processor, IPacketProcessor
 {
     private readonly ILogger _logger;
-    private readonly ProcessChannel _processChannel;
-    private readonly IServiceContext _managerContext;
+    private readonly IManagerContext _managerContext;
     private readonly Dictionary<PacketDomain, IPacketDispatcher> _packetProcessors;
 
-    public PacketProcessor(ILoggerFactory loggerFactory, IObjectFactoryHelper objectFactory, IServiceContext managerContext)
+    public PacketProcessor(ILoggerFactory loggerFactory, IObjectFactoryHelper objectFactory, IManagerContext managerContext) : base(loggerFactory)
     {
         _logger = loggerFactory.CreateLogger<PacketProcessor>();
-        _processChannel = new ProcessChannel(loggerFactory, ExecuteAsync);
         _managerContext = managerContext;
         _packetProcessors = new()
         {
-            { PacketDomain.Auth, objectFactory.Create<AuthService>() },
-            { PacketDomain.Chat, objectFactory.Create<ChatService>() },
+            { PacketDomain.Auth, objectFactory.Create<AuthDispatcher>() },
+            { PacketDomain.Chat, objectFactory.Create<ChatDispatcher>() },
             // { PacketDomain.Channel, objectFactory.Create<ChannelProcessor>() },
         };
     }
 
-    public async Task OnReceivedAsync(ReceivedContext context)
+    private static bool IsValidatePacketType(PacketType packetType)
     {
-        await _processChannel.EnqueueAsync(context);
+        return Enum.IsDefined(typeof(PacketType), packetType);
     }
 
-    public async Task ExecuteAsync(ReceivedContext context)
+    public override async Task ExecuteAsync(ReceivedContext ctx)
     {
-        if (!PacketHelper.TryGetPacketType(context.Payload, out var type))
+        if (!IsValidatePacketType(ctx.PacketType))
         {
-            _logger.LogError("Invalid packet type / {SessionId}", context.SessionId);
-            Close(SocketDisconnect.InvalidPacket, context);
+            _logger.LogError("Invalid packet type: {PacketType}", ctx.PacketType);
+            Kick(ErrorType.InvalidPacket, ctx);
             return;
         }
 
-        var packetDomain = (PacketDomain)type;
+        var packetDomain = ctx.PacketType.GetPacketDomain();
         if (!_packetProcessors.TryGetValue(packetDomain, out var processor))
         {
             _logger.LogError("Processor not found: {PacketDomain}", packetDomain);
-            Close(SocketDisconnect.InvalidPacket, context);
+            Kick(ErrorType.InvalidPacket, ctx);
             return;
         }
 
-        await processor.ProcessAsync(context.SessionId, type, context.Payload);
-        context.Return();
-    }
-
-    public async Task OnSessionClosed(string sessionId)
-    {
-        if (!_packetProcessors.TryGetValue(PacketDomain.Auth, out var processor))
+        if (!await processor.ProcessAsync(ctx.SessionId, ctx.PacketType, ctx.Payload))
         {
-            _logger.LogError("Processor not found: {PacketDomain}", PacketDomain.Auth);
+            _logger.LogError("Process failed: {SessionId}, {PacketType}", ctx.SessionId, ctx.PacketType);
+            Kick(ErrorType.ProcessFailed, ctx);
             return;
         }
 
-        await processor.ProcessAsync(sessionId, PacketType.Logout, ReadOnlyMemory<byte>.Empty);
+        ctx.Return();
     }
 
-    private void Close(SocketDisconnect reason, ReceivedContext context)
+    private void Kick(ErrorType reason, ReceivedContext ctx)
     {
-        if (_managerContext.SessionManager.TryGetSession(context.SessionId, out var session))
-        {
-            session!.Close(new SessionClose(reason));
-        }
-        else
-        {
-            _logger.LogError("Session not found: {SessionId}", context.SessionId);
-        }
-
-        context.Return();
+        _managerContext.SessionManager.Kick(ctx.SessionId, reason);
+        ctx.Return();
     }
 }
 

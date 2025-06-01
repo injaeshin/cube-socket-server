@@ -1,28 +1,26 @@
 ﻿using System.Net.Sockets;
-using Cube.Common;
+using Cube.Packet;
 using Microsoft.Extensions.Logging;
 
 namespace Cube.Core.Pool;
 
-public class SocketAsyncEventArgsPool(ILoggerFactory loggerFactory, int maxConnections)
+public class SocketAsyncEventArgsPool(ILoggerFactory loggerFactory, int maxConnections) : IAsyncResource
 {
-    private readonly BufferPool _eventArgsBuffer = new(loggerFactory, maxConnections * Consts.BUFFER_SIZE, Consts.BUFFER_SIZE);
+    private readonly BufferPool _bufferPool = new(loggerFactory, maxConnections * PacketConsts.BUFFER_SIZE, PacketConsts.BUFFER_SIZE);
     private readonly ObjectPool<SocketAsyncEventArgs> _eventArgsPool = new(() => new SocketAsyncEventArgs(), maxConnections);
-    private readonly ILogger _logger = loggerFactory.CreateLogger<SocketAsyncEventArgsPool>();
-
-    private bool _closed = false;
-
-    public int Count => _eventArgsPool.Count;
+    private volatile bool _stopped = false;
 
     public SocketAsyncEventArgs? Rent()
     {
+        if (_stopped) throw new ObjectDisposedException(nameof(SocketAsyncEventArgsPool));
+
         var args = _eventArgsPool.Rent();
         ClearEventArgs(args);
 
-        var buffer = _eventArgsBuffer.AllocateBuffer();
+        var buffer = _bufferPool.AllocateBuffer();
         if (buffer.IsEmpty)
         {
-            _logger.LogCritical("버퍼 소진");
+            _eventArgsPool.Return(args); // 메모리 실패 시에도 반환
             return null;
         }
 
@@ -32,16 +30,11 @@ public class SocketAsyncEventArgsPool(ILoggerFactory loggerFactory, int maxConne
 
     public SocketAsyncEventArgs? RentWithoutBuffer()
     {
+        if (_stopped) throw new ObjectDisposedException(nameof(SocketAsyncEventArgsPool));
+
         var args = _eventArgsPool.Rent();
-        if (args == null)
-        {
-            _logger.LogCritical("풀 소진");
-            return null;
-        }
-
         ClearEventArgs(args);
-        args.SetBuffer(null, 0, 0);
-
+        args.SetBuffer(Memory<byte>.Empty);
         return args;
     }
 
@@ -53,24 +46,33 @@ public class SocketAsyncEventArgsPool(ILoggerFactory loggerFactory, int maxConne
 
     private void ClearEventArgs(SocketAsyncEventArgs args)
     {
-        if (args.AcceptSocket != null)
+        args.AcceptSocket = null;
+
+        if (!args.MemoryBuffer.IsEmpty)
         {
-            args.AcceptSocket = null;
+            _bufferPool.FreeBuffer(args.MemoryBuffer);
+            args.SetBuffer(Memory<byte>.Empty);
         }
 
-        if (args.Buffer != null)
-        {
-            _eventArgsBuffer.FreeBuffer(args.Buffer);
-            args.SetBuffer(null, 0, 0);
-        }
+        args.UserToken = null;
+        args.RemoteEndPoint = null;
     }
 
-    public void Close()
-    {
-        if (_closed) throw new InvalidOperationException("SocketAsyncEventArgsPool is closed");
-        _closed = true;
+    public string Name { get; init; } = "SocketAsyncEventArgsPool";
+    public int Count => _eventArgsPool.Count;
+    public int InUse => _eventArgsPool.InUse;
 
-        _eventArgsPool.Close();
-        _eventArgsBuffer.Close();
+    public async Task StopAsync(TimeSpan timeout)
+    {
+        await CloseAsync(timeout);
+    }
+
+    private async Task CloseAsync(TimeSpan timeout)
+    {
+        if (_stopped) throw new InvalidOperationException("SocketAsyncEventArgsPool is already closed");
+        _stopped = true;
+
+        await _eventArgsPool.StopAsync(timeout);
+        await _bufferPool.StopAsync(timeout);
     }
 }

@@ -1,56 +1,73 @@
-﻿namespace Cube.Client;
+﻿using Cube.Client;
 
-internal class Program
+class Program
 {
-    private static bool _isRunning = true;
-
     static async Task Main(string[] args)
     {
-        Console.CancelKeyPress += (sender, e) =>
-        {
-            e.Cancel = true;
-            _isRunning = false;
-        };
+        const string SERVER_IP = "127.0.0.1";
+        const int TCP_PORT = 7777;
+        const int UDP_PORT = 7778;
+
+        using var client = new ChatClient(SERVER_IP, TCP_PORT, UDP_PORT);
+
+        // 이벤트 핸들러 등록
+        client.OnError += (message) => Console.WriteLine($"에러: {message}");
+        client.OnStatusChanged += (message) => Console.WriteLine($"상태: {message}");
+        client.OnChatMessageReceived += (sender, message) => Console.WriteLine($"{sender}: {message}");
 
         try
         {
-            await RunClientAsync();
+            // 1. TCP 연결
+            Console.WriteLine("TCP 서버에 연결 중...");
+            client.Connect();
+
+            // 2. 로그인 및 UDP 연결
+            Console.WriteLine("로그인 중...");
+            client.Login();
+
+            // 잠시 대기하여 연결이 완료되도록 함
+            await Task.Delay(1000);
+
+            // 3. 테스트 메시지 전송
+            Console.WriteLine("테스트 메시지 전송...");
+            client.SendChatMessage("안녕하세요! 테스트 메시지입니다.");
+
+            // 4. 종료될 때까지 대기
+            Console.WriteLine("메시지를 입력하세요. (종료하려면 'exit' 입력)");
+            Console.WriteLine("UDP로 전송하려면 '/udp'로 시작하세요.");
+
+            while (true)
+            {
+                var input = Console.ReadLine();
+                if (string.IsNullOrEmpty(input)) continue;
+
+                if (input.ToLower() == "exit")
+                    break;
+
+                try
+                {
+                    if (input.StartsWith("/udp"))
+                    {
+                        var message = input.Substring(4).Trim();
+                        if (!string.IsNullOrEmpty(message))
+                        {
+                            client.SendUdpMessage(message);
+                        }
+                    }
+                    else
+                    {
+                        client.SendChatMessage(input);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"메시지 전송 실패: {ex.Message}");
+                }
+            }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"오류 발생: {ex.Message}");
-        }
-    }
-
-    private static async Task RunClientAsync()
-    {
-        using var client = new ChatClient("127.0.0.1", 7777);
-
-        client.OnError += (error) => Console.WriteLine($"오류: {error}");
-        client.OnStatusChanged += (status) => Console.WriteLine(status);
-        client.OnChatMessageReceived += (sender, message) =>
-            Console.WriteLine($"> {sender}: {message}");
-
-        try
-        {
-            await client.StartAsync();
-            Console.Write("사용자 이름을 입력하세요: ");
-            var username = Console.ReadLine() ?? "Anonymous";
-            await client.LoginAsync(username);
-
-            while (_isRunning)
-            {
-                var message = Console.ReadLine();
-                if (string.IsNullOrEmpty(message)) continue;
-
-                if (message.Equals("/quit", StringComparison.OrdinalIgnoreCase))
-                {
-                    _isRunning = false;
-                    break;
-                }
-
-                await client.SendChatMessageAsync(message);
-            }
         }
         finally
         {

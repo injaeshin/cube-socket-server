@@ -35,6 +35,12 @@ public class PacketReader
         return _memory.Span.Slice(_pos, length);
     }
 
+    public PacketType ReadPacketType()
+    {
+        var span = GetCurrentSpan(2);
+        return (PacketType)ReadUInt16();
+    }
+
     public byte ReadByte()
     {
         EnsureRemaining(1);
@@ -160,11 +166,6 @@ public class PacketReader
     {
         _pos = Math.Min(_pos + count, _memory.Length);
     }
-
-    //public PacketType ReadPacketType()
-    //{
-    //    return (PacketType)ReadUInt16();
-    //}
 
     public void Reset()
     {

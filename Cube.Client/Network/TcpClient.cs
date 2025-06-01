@@ -1,138 +1,96 @@
-using System.Buffers;
-using System.Net.Sockets;
-using Cube.Common;
-using Cube.Core;
-using Cube.Core.Network;
+using System.Net;
 using Cube.Packet;
 
 namespace Cube.Client.Network;
 
 public class TcpClient : IDisposable
 {
-    private readonly System.Net.Sockets.TcpClient _client;
-    private readonly string _serverAddress;
-    private readonly int _serverPort;
-    private NetworkStream? _stream;
+    private readonly TcpSocket _socket;
+    private bool _disposed;
     private bool _isConnected;
-    private readonly CancellationTokenSource _cancellationTokenSource;
-    private readonly PacketBuffer _packetBuffer;
 
-    public event Action<string>? OnError;
-    public event Action? OnDisconnected;
+    public string ServerAddress { get; }
+    public int ServerPort { get; }
+
+    public event Action<string>? OnStatusChanged;
     public event Action<PacketType, ReadOnlyMemory<byte>>? OnPacketReceived;
 
     public TcpClient(string serverAddress, int serverPort)
     {
-        _serverAddress = serverAddress;
-        _serverPort = serverPort;
-        _client = new System.Net.Sockets.TcpClient();
-        _cancellationTokenSource = new CancellationTokenSource();
-        _packetBuffer = new PacketBuffer();
+        ServerAddress = serverAddress;
+        ServerPort = serverPort;
+        _socket = new TcpSocket();
+        _socket.OnStatusChanged += status => OnStatusChanged?.Invoke(status);
+        _socket.OnDataReceived += OnSocketDataReceived;
     }
 
-    public async Task ConnectAsync()
+    private void OnSocketDataReceived(PacketType packetType, ReadOnlyMemory<byte> data)
     {
-        try
-        {
-            _client.NoDelay = true;
-            await _client.ConnectAsync(_serverAddress, _serverPort);
-            if (_client.Connected)
-            {
-                _stream = _client.GetStream();
-                _isConnected = true;
-                _ = ReceiveLoopAsync(_cancellationTokenSource.Token);
-            }
-            else
-            {
-                OnError?.Invoke("연결 실패: 서버에 연결할 수 없습니다.");
-            }
-        }
-        catch (Exception ex)
-        {
-            OnError?.Invoke($"연결 실패: {ex.Message}");
-            throw;
-        }
+        if (!_isConnected) return;
+
+        OnPacketReceived?.Invoke(packetType, data);
     }
 
-    public async Task SendAsync(PacketWriter writer)
+    public void Connect()
     {
-        if (!_isConnected || _stream == null)
+        if (_isConnected)
         {
-            OnError?.Invoke("연결되지 않은 상태입니다.");
-            return;
+            throw new InvalidOperationException("이미 연결된 상태입니다.");
         }
 
         try
         {
-            var (data, rentedBuffer) = writer.ToTcpPacket();
-            await _stream.WriteAsync(data);
-            if (rentedBuffer != null)
-            {
-                ArrayPool<byte>.Shared.Return(rentedBuffer);
-            }
+            _socket.Connect(ServerAddress, ServerPort);
+            _isConnected = true;
+            OnStatusChanged?.Invoke("TCP 연결 성공!");
         }
         catch (Exception ex)
         {
-            OnError?.Invoke($"패킷 전송 실패: {ex.Message}");
-            Disconnect();
+            throw new Exception($"TCP 연결 실패: {ex.Message}");
         }
     }
 
-    private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
+    public void Send(Memory<byte> data)
     {
+        if (!_isConnected)
+        {
+            throw new InvalidOperationException("연결되지 않은 상태입니다.");
+        }
+
         try
         {
-            var buffer = new byte[Consts.BUFFER_SIZE];
-            while (!cancellationToken.IsCancellationRequested && _isConnected)
-            {
-                if (_stream == null) break;
-
-                var bytesRead = await _stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken);
-                if (bytesRead == 0) break;
-
-                if (!_packetBuffer.TryAppend(buffer.AsMemory(0, bytesRead)))
-                {
-                    OnError?.Invoke("버퍼 오버플로우");
-                    break;
-                }
-
-                while (_packetBuffer.TryGetValidatePacket(out var packetType, out var payload, out var rentedBuffer))
-                {
-                    try
-                    {
-                        OnPacketReceived?.Invoke((PacketType)packetType, payload);
-                    }
-                    finally
-                    {
-                        PacketBuffer.Return(rentedBuffer);
-                    }
-                }
-            }
+            _socket.Send(data);
         }
         catch (Exception ex)
         {
-            OnError?.Invoke($"수신 오류: {ex.Message}");
-        }
-        finally
-        {
-            Disconnect();
+            throw new Exception($"TCP 메시지 전송 실패: {ex.Message}");
         }
     }
 
     public void Disconnect()
     {
-        if (!_isConnected) return;
-
-        _isConnected = false;
-        _cancellationTokenSource.Cancel();
-        _stream?.Close();
-        _client.Close();
-        OnDisconnected?.Invoke();
+        if (_isConnected)
+        {
+            _socket.Disconnect();
+            _isConnected = false;
+        }
     }
 
     public void Dispose()
     {
-        Disconnect();
-        _cancellationTokenSource.Dispose();
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        if (disposing)
+        {
+            Disconnect();
+            _socket.Dispose();
+        }
     }
 }

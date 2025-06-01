@@ -1,25 +1,23 @@
 using System.Net.Sockets;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
-using Cube.Core.Pool;
 
 namespace Cube.Core.Network;
 
-public abstract class SendChannel<T> : IDisposable
+public abstract class SendChannel<T> : IDisposable where T : IContext
 {
     protected readonly ILogger _logger;
     protected readonly Channel<T> _channel;
-    private readonly PoolEvent _poolEvent;
     private readonly CancellationTokenSource _cts;
     private readonly Task _workerTask;
     private bool _disposed = false;
 
-    public SendChannel(ILoggerFactory loggerFactory, PoolEvent poolEvent)
+    public SendChannel(ILoggerFactory loggerFactory)
     {
         _logger = loggerFactory.CreateLogger<SendChannel<T>>();
-        _poolEvent = poolEvent;
+
         _cts = new CancellationTokenSource();
-        _channel = System.Threading.Channels.Channel.CreateUnbounded<T>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+        _channel = Channel.CreateUnbounded<T>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
         _workerTask = Task.Run(WorkerAsync);
     }
 
@@ -42,37 +40,33 @@ public abstract class SendChannel<T> : IDisposable
         }
     }
 
-    public async virtual Task EnqueueAsync(T packet)
+    public async Task EnqueueAsync(T ctx)
     {
-        await _channel.Writer.WriteAsync(packet);
+        try
+        {
+            await _channel.Writer.WriteAsync(ctx);
+        }
+        catch (ChannelClosedException)
+        {
+            _logger.LogDebug("[SendQueue] {SessionId} Channel already closed. Packet dropped.", ctx.SessionId);
+            ctx.Return();
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "[SendQueue] {SessionId} Failed to enqueue packet", ctx.SessionId);
+            ctx.Return();
+        }
     }
 
     protected abstract Task OnProcessAsync(T ctx);
 
     protected abstract void OnSendCompletedAsync(object? sender, SocketAsyncEventArgs e);
 
-    protected SocketAsyncEventArgs RentSocketAsyncEventArgs()
-    {
-        var e = _poolEvent.OnRentEventArgs() ?? throw new Exception("SocketAsyncEventArgs is null");
-        e.Completed += OnSendCompletedAsync;
-        return e;
-    }
-
-    protected void ReturnSocketAsyncEventArgs(SocketAsyncEventArgs e)
-    {
-        e.Completed -= OnSendCompletedAsync;
-        e.SetBuffer(null, 0, 0);
-        e.UserToken = null;
-        _poolEvent.OnReleaseEventArgs(e);
-    }
-
-
     public void Close()
     {
         _cts.Cancel();
         _channel.Writer.TryComplete();
         _workerTask?.Wait(TimeSpan.FromSeconds(1));
-        _cts.Dispose();
     }
 
     public void Dispose()
@@ -89,6 +83,7 @@ public abstract class SendChannel<T> : IDisposable
         if (disposing)
         {
             Close();
+            _cts.Dispose();
         }
     }
 }

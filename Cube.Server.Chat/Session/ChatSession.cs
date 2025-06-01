@@ -1,7 +1,8 @@
-using Microsoft.Extensions.Logging;
-
+using Cube.Core;
+using Cube.Core.Router;
 using Cube.Core.Sessions;
-using Cube.Common.Interface;
+using Cube.Packet;
+using Microsoft.Extensions.Logging;
 
 namespace Cube.Server.Chat.Session;
 
@@ -13,24 +14,25 @@ public class ChatSession : Core.Sessions.Session, IChatSession
 {
     private readonly ILogger _logger;
 
-    public ChatSession(SessionEventHandler events) : base(LoggerFactoryHelper.GetLoggerFactory(), events)
+    public ChatSession(ILoggerFactory loggerFactory, IHeartbeat heartbeat, IFunctionRouter functionRouter)
+        : base(loggerFactory.CreateLogger<Core.Sessions.Session>(), heartbeat, functionRouter)
     {
-        _logger = LoggerFactoryHelper.CreateLogger<ChatSession>();
+        _logger = loggerFactory.CreateLogger<ChatSession>();
     }
 
-    protected override void OnConnected(ISession session)
+    protected override void OnConnected(ISession session, TransportType transportType)
     {
-        base.OnConnected(session);
+        base.OnConnected(session, transportType);
     }
 
-    protected override void OnDisconnected(ISession session, bool isGraceful)
+    protected override void OnDisconnected(ISession session, TransportType transportType, bool isGraceful)
     {
-        base.OnDisconnected(session, isGraceful);
+        base.OnDisconnected(session, transportType, isGraceful);
     }
 
-    protected override bool OnPreProcessReceivedAsync(ushort packetType, ReadOnlyMemory<byte> payload)
+    protected override bool OnPreProcessReceivedAsync(PacketType packetType)
     {
-        if (!base.OnPreProcessReceivedAsync(packetType, payload))
+        if (!base.OnPreProcessReceivedAsync(packetType))
         {
             return false;
         }

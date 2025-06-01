@@ -1,35 +1,25 @@
-using Microsoft.Extensions.Logging;
-using Cube.Common.Interface;
+using Cube.Core;
 using Cube.Packet;
-using Cube.Server.Chat.Handler;
+using Cube.Server.Chat.Model;
 
 namespace Cube.Server.Chat.Service;
 
-public class ChatService : IPacketDispatcher
+public interface IChatService
 {
-    private readonly ILogger _logger;
-    private readonly IServiceContext _managerContext;
-    private readonly IPacketFactory _packetFactory;
-    private readonly Dictionary<PacketType, IPacketHandler> _handlers;
+    Task SendToAll(ChatMessage message);
+}
 
-    public ChatService(IObjectFactoryHelper objectFactory, IServiceContext managerContext, IPacketFactory packetFactory)
-    {
-        _logger = LoggerFactoryHelper.CreateLogger<ChatService>();
-        _managerContext = managerContext;
-        _packetFactory = packetFactory;
-        _handlers = new Dictionary<PacketType, IPacketHandler>
-        {
-            { PacketType.ChatMessage, objectFactory.Create<ChatMessageHandler>() },
-        };
-    }
+public class ChatService(IManagerContext managerContext) : IChatService
+{
+    private readonly IManagerContext _managerContext = managerContext;
 
-    public IPacketHandler GetHandler(PacketType type)
+    public async Task SendToAll(ChatMessage message)
     {
-        throw new NotImplementedException();
-    }
-
-    public Task<bool> ProcessAsync(string sessionId, PacketType packetType, ReadOnlyMemory<byte> payload)
-    {
-        throw new NotImplementedException();
+        var (data, rentedBuffer) = new PacketWriter(PacketType.ChatMessage)
+                                        .WriteString(message.Sender)
+                                        .WriteString(message.Message)
+                                        .ToTcpPacket();
+        await _managerContext.SessionManager.SendToAll(data, rentedBuffer);
+        BufferArrayPool.Return(rentedBuffer);
     }
 }

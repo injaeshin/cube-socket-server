@@ -1,13 +1,17 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Net.Sockets;
 using Cube.Core;
+using Cube.Core.Pool;
 using Cube.Core.Sessions;
-using Cube.Common.Interface;
+using Cube.Core.Router;
+using Cube.Core.Execution;
 using Cube.Packet;
 using Cube.Server.Chat.Session;
-using Cube.Server.Chat.Handler;
 using Cube.Server.Chat.User;
 using Cube.Server.Chat.Processor;
+using Cube.Server.Chat.Service;
+
 
 
 namespace Cube.Server.Chat;
@@ -17,7 +21,7 @@ public static class ServiceRegister
     public static void RegisterLogging(ILoggingBuilder logging)
     {
         logging.ClearProviders();
-        logging.SetMinimumLevel(LogLevel.Debug);
+        logging.SetMinimumLevel(LogLevel.Trace);
 
         logging.AddConsole(options =>
         {
@@ -34,27 +38,37 @@ public static class ServiceRegister
     {
         // 헬퍼 등록
         services.AddSingleton<IObjectFactoryHelper, ObjectFactoryHelper>();
-        services.AddSingleton<IPacketFactory, PacketFactory>();
+        services.AddSingleton<IManagerContext, ManagerContext>();
 
-        // 공통 서비스
+        // 기본 서비스
         services.AddSingleton<SessionHeartbeat>();
-        services.AddSingleton<IServiceContext, ServiceContext>();
-        services.AddSingleton<IPacketProcessor, PacketProcessor>();
+        services.AddSingleton<IHeartbeat>(sp => sp.GetRequiredService<SessionHeartbeat>());
+        services.AddSingleton<NetworkService>();
+        services.AddSingleton<INetworkService>(sp => sp.GetRequiredService<NetworkService>());
+        services.AddSingleton<IFunctionRouter, FunctionRouter>();
+        services.AddSingleton<IResourceManager>(sp => new ResourceManager(sp.GetRequiredService<ILoggerFactory>(), true));
+        services.AddSingleton<IPoolHandler<SocketAsyncEventArgs>>(sp => sp.GetRequiredService<IResourceManager>().GetPoolHandler(ResourceKey.SocketAsyncEventArgsPool));
 
-        // 관리 서비스
-        services.AddSingleton<IUserManager, UserManager>();
         services.AddSingleton<INetworkManager, NetworkManager>();
-        services.AddSingleton<IChatSessionManager, ChatSessionManager>();
 
-        // 핸들러 등록
-        services.AddTransient<LoginHandler>();
-        services.AddTransient<LogoutHandler>();
-        services.AddTransient<ChatMessageHandler>();
+        // 관리 매니저
+        services.AddSingleton<IUserManager, UserManager>();
+        services.AddSingleton<IChatSessionManager, ChatSessionManager>();
+        services.AddSingleton<IPacketProcessor, PacketProcessor>();
+        services.AddSingleton<IProcessor>(sp => sp.GetRequiredService<IPacketProcessor>());
+
+        // 패킷 실행
+        services.AddTransient<AuthDispatcher>();
+        services.AddTransient<ChatDispatcher>();
+
+        // 로직 서비스
+        services.AddSingleton<IChatService, ChatService>();
     }
 
     public static void RegisterHostedServices(IServiceCollection services)
     {
         services.AddHostedService<App>();
         services.AddHostedService(provider => provider.GetRequiredService<SessionHeartbeat>());
+        services.AddHostedService(provider => provider.GetRequiredService<NetworkService>());
     }
 }

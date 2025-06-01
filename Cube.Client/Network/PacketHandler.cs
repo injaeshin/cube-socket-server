@@ -2,100 +2,97 @@ using Cube.Packet;
 
 namespace Cube.Client.Network;
 
-public class PacketHandler
+public class PacketHandler : IDisposable
 {
-    private readonly TcpClient _client;
-    public event Action<string>? OnError;
+    private readonly TcpClient _tcpClient;
+    private readonly UdpClient _udpClient;
+    private bool _isRunning;
+    private bool _disposed;
+
     public event Action<string, string>? OnChatMessageReceived;
-    public event Action? OnLoginSuccess;
+    public event Action<string>? OnLoginSuccess;
     public event Action? OnPingReceived;
+    public event Action<string>? OnWelcomeReceived;
 
-    public PacketHandler(TcpClient client)
+    public PacketHandler(TcpClient tcpClient, UdpClient udpClient)
     {
-        _client = client;
-        _client.OnPacketReceived += HandlePacket;
-        _client.OnError += (error) => OnError?.Invoke(error);
+        _tcpClient = tcpClient;
+        _udpClient = udpClient;
+
+        _tcpClient.OnPacketReceived += OnPacketReceived;
+        _udpClient.OnPacketReceived += OnPacketReceived;
     }
 
-    private void HandlePacket(PacketType packetType, ReadOnlyMemory<byte> payload)
+    private void OnPacketReceived(PacketType packetType, ReadOnlyMemory<byte> data)
     {
-        try
+        if (!_isRunning) return;
+
+        switch (packetType)
         {
-            var reader = new PacketReader(payload);
+            case PacketType.LoginSuccess:
+                var reader = new PacketReader(data);
+                var token = reader.ReadString();
+                OnLoginSuccess?.Invoke(token);
+                break;
+            case PacketType.Welcome:
+                //reader = new PacketReader(data);
+                //var welcomeMessage = reader.ReadString();
+                OnWelcomeReceived?.Invoke("UDP ���� ����");
+                break;
 
-            switch (packetType)
-            {
-                case PacketType.LoginSuccess:
-                    OnLoginSuccess?.Invoke();
-                    break;
+            case PacketType.ChatMessage:
+                reader = new PacketReader(data);
+                var sender = reader.ReadString();
+                var message = reader.ReadString();
+                OnChatMessageReceived?.Invoke(sender, message);
+                break;
 
-                case PacketType.ChatMessage:
-                    var sender = reader.ReadString();
-                    var message = reader.ReadString();
-                    OnChatMessageReceived?.Invoke(sender, message);
-                    break;
-
-                case PacketType.Ping:
-                    OnPingReceived?.Invoke();
-                    _ = SendPong();
-                    break;
-
-                case PacketType.Pong:
-                    OnError?.Invoke($"Pong!?: {packetType}");
-                    break;
-
-                default:
-                    OnError?.Invoke($"알 수 없는 패킷 타입: {packetType}");
-                    break;
-            }
-        }
-        catch (Exception ex)
-        {
-            OnError?.Invoke($"패킷 처리 오류: {ex.Message}");
+            case PacketType.Ping:
+                OnPingReceived?.Invoke();
+                break;
         }
     }
 
-    public async Task SendLoginAsync(string username)
+    public void ReceiveLoop()
     {
-        try
-        {
-            var writer = new PacketWriter();
-            writer.WriteType((ushort)PacketType.Login);
-            writer.WriteString(username);
-            await _client.SendAsync(writer);
-        }
-        catch (Exception ex)
-        {
-            OnError?.Invoke($"로그인 패킷 전송 실패: {ex.Message}");
-        }
+        _isRunning = true;
     }
 
-    public async Task SendChatMessageAsync(string message)
+    public void SendLogin(string username)
     {
-        try
-        {
-            var writer = new PacketWriter();
-            writer.WriteType((ushort)PacketType.Chat);
-            writer.WriteString(message);
-            await _client.SendAsync(writer);
-        }
-        catch (Exception ex)
-        {
-            OnError?.Invoke($"채팅 패킷 전송 실패: {ex.Message}");
-        }
+        using var writer = new PacketWriter(PacketType.Login);
+        writer.WriteString(username);
+        var (data, _) = writer.ToTcpPacket();
+        _tcpClient.Send(data);
     }
 
-    private async Task SendPong()
+    public void SendChatMessage(string message)
     {
-        try
+        using var writer = new PacketWriter(PacketType.ChatMessage);
+        writer.WriteString(message);
+        var (data, _) = writer.ToTcpPacket();
+        _tcpClient.Send(data);
+    }
+
+    public void Stop()
+    {
+        _isRunning = false;
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        if (disposing)
         {
-            var writer = new PacketWriter();
-            writer.WriteType((ushort)PacketType.Pong);
-            await _client.SendAsync(writer);
-        }
-        catch (Exception ex)
-        {
-            OnError?.Invoke($"Pong 패킷 전송 실패: {ex.Message}");
+            Stop();
         }
     }
 }

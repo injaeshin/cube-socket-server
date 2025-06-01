@@ -1,112 +1,90 @@
-using Microsoft.Extensions.Logging;
-using Cube.Common.Interface;
 using Cube.Core.Network;
+using Cube.Core.Router;
+using Cube.Packet;
+using Microsoft.Extensions.Logging;
 
 namespace Cube.Core.Sessions;
 
-public interface ISessionExecutor
-{
-    void Bind(ITransport transport);
-    void Run();
-}
-
-public interface ISessionNotify
-{
-    void OnNotifyConnected();
-    void OnNotifyDisconnected(bool isGraceful);
-    void OnNotifyError(Exception exception);
-    Task OnNotifyReceived(ushort packetType, ReadOnlyMemory<byte> payload, byte[]? rentedBuffer);
-}
-
-public class Session : ISession, ISessionExecutor, ISessionNotify
+public class Session : ICoreSession, INotifySession
 {
     private readonly ILogger _logger;
-    private ITransport? _transport;
+    private readonly ISessionHeartbeat _heartbeat;
+    private readonly IFunctionRouter _functionRouter;
 
-    private readonly string _sessionId = CreateSessionId();
+    private readonly string _sessionId;
     public string SessionId => _sessionId;
 
-    private readonly SessionKeepAliveHandler _keepAlive;
-    private readonly SessionResourceHandler _resource;
-    private readonly SessionIOHandler _io;
+    private ITcpConnection? _tcpConnection = null;
+    private IUdpConnection? _udpConnection = null;
+
+    protected Session(ILogger<Session> logger, IHeartbeat heartbeat, IFunctionRouter callbackRouter)
+    {
+        _logger = logger;
+        _heartbeat = heartbeat;
+        _functionRouter = callbackRouter;
+        _sessionId = CoreHelper.CreateSessionId();
+    }
 
     #region ISessionState
     private readonly SessionState _state = new();
-    public SessionState State => _state;
     public bool IsConnected => _state.IsConnected;
     public bool IsAuthenticated => _state.IsAuthenticated;
     public bool IsDisconnected => _state.IsDisconnected;
-    public void SetConnected() => _state.SetConnected();
     public void SetAuthenticated() => _state.SetAuthenticated();
-    public void SetDisconnected() => _state.SetDisconnected();
-    #endregion    
+    private void SetConnected() => _state.SetConnected();
+    private void SetDisconnected() => _state.SetDisconnected();
+    #endregion
 
-    protected Session(ILoggerFactory loggerFactory, SessionEventHandler events)
+    #region ICoreSession
+    public void Bind(ITcpConnection conn)
     {
-        _logger = loggerFactory.CreateLogger<Session>();
-        _keepAlive = events.KeepAlive;
-        _resource = events.Resource;
-        _io = events.IO;
-
-        _transport = null;
+        _tcpConnection = conn;
+        _tcpConnection.BindNotify(this);
+        _tcpConnection.Run();
     }
 
-    private static string CreateSessionId()
+    public void Bind(IUdpConnection conn)
     {
-        string shortTime = DateTime.Now.ToString("HHmm");
-        string randomPart = Guid.NewGuid().ToString("N")[..4];
-        return $"s_{shortTime}_{randomPart}";
+        _udpConnection = conn;
+        _udpConnection.BindNotify(this);
+        _udpConnection.Run();
     }
 
-    public void Bind(ITransport transport)
-    {
-        _transport = transport;
-        _transport.BindNotify(this);
-    }
+    public ITcpConnection? TcpConnection => _tcpConnection;
+    public IUdpConnection? UdpConnection => _udpConnection;
 
-    public void Run()
+    public void CloseUdpConnection()
     {
-        if (_transport == null)
+        if (_udpConnection == null)
         {
-            throw new Exception("TCP 트랜스포트가 바인딩되지 않았습니다.");
+            return;
         }
 
-        _transport.Run();
+        _udpConnection.Close();
+        _udpConnection = null;
     }
+    #endregion
 
-    public void Close(ISessionClose reason)
-    {
-        _logger.LogDebug("Session Close: {Id} - Reason: {Desc}", SessionId, reason.Description);
-        _transport?.Close(reason.IsGraceful);
-    }
-
-    protected void HeartbeatRegister() => _keepAlive.OnRegister(this);
-    protected void HeartbeatUnregister() => _keepAlive.OnUnregister(SessionId);
-    protected void HeartbeatUpdate() => _keepAlive.OnUpdate(SessionId);
-    protected void RemoveSession() => _resource.OnReturnSession(this);
-
-    #region 이벤트 및 패킷 처리
-    protected virtual void OnConnected(ISession session)
+    #region 이벤트 핸들러
+    protected virtual void OnConnected(ISession session, TransportType transportType)
     {
         _logger.LogDebug("OnConnected: {SessionId}", SessionId);
-        HeartbeatRegister();
-        SetConnected();
+        Welcome();
     }
 
-    protected virtual void OnDisconnected(ISession session, bool isGraceful)
+    protected virtual void OnDisconnected(ISession session, TransportType transportType, bool isGraceful)
     {
-        _logger.LogDebug("OnDisconnected: {SessionId} - isGraceful: {isGraceful}", SessionId, isGraceful);
-        HeartbeatUnregister();
-        RemoveSession();
-        _state.Clear();
+        _logger.LogDebug("OnDisconnected: {SessionId} - isGraceful: {isGraceful} {transportType}", SessionId, isGraceful, transportType);
+        Cleanup(ErrorType.GracefulDisconnect);
+        ReturnSession();
     }
 
-    protected virtual bool OnPreProcessReceivedAsync(ushort packetType, ReadOnlyMemory<byte> payload)
+    protected virtual bool OnPreProcessReceivedAsync(PacketType packetType)
     {
-        _logger.LogDebug("OnPreProcessReceivedAsync: {SessionId}", SessionId);
+        _logger.LogDebug("OnPreProcessReceivedAsync: {SessionId}, PacketType: {PacketType}", SessionId, packetType);
         HeartbeatUpdate();
 
-        if (packetType == 0x0001/*Ping*/ || packetType == 0x0002/*Pong*/)
+        if (packetType == PacketType.Ping || packetType == PacketType.Pong)
         {
             return false;
         }
@@ -114,37 +92,104 @@ public class Session : ISession, ISessionExecutor, ISessionNotify
         return true;
     }
 
-    public async Task SendAsync(Memory<byte> data, byte[]? rentedBuffer)
+    public void OnNotifyConnected(TransportType transportType)
     {
-        if (_transport == null) throw new Exception("TCP 트랜스포트가 바인딩되지 않았습니다.");
-
-        _logger.LogDebug("SendAsync: {SessionId}, length: {Length}", SessionId, data.Length);
-        await _io.OnPacketSendAsync(SessionId, data, rentedBuffer, _transport.GetSocket());
+        OnConnected(this, transportType);
     }
 
-    public void OnNotifyConnected()
+    public void OnNotifyDisconnected(TransportType transportType, bool isGraceful)
     {
-        OnConnected(this);
+        OnDisconnected(this, transportType, isGraceful);
     }
 
-    public void OnNotifyDisconnected(bool isGraceful)
+    public async Task OnNotifyUdpSend(UdpSendContext context)
     {
-        OnDisconnected(this, isGraceful);
+        await _functionRouter.InvokeFunc<UdpSendCmd, Task>(new UdpSendCmd(context));
     }
 
-    public async Task OnNotifyReceived(ushort packetType, ReadOnlyMemory<byte> payload, byte[]? rentedBuffer)
+    public async Task OnNotifyReceived(ReceivedContext context)
     {
-        if (OnPreProcessReceivedAsync(packetType, payload))
+        if (!OnPreProcessReceivedAsync(context.PacketType)) return;
+        _logger.LogDebug("OnNotifyReceived: {SessionId}, length: {Length}", SessionId, context.Payload.Length);
+
+        await _functionRouter.InvokeFunc<ReceivedEnqueueCmd, Task>(new ReceivedEnqueueCmd(context));
+    }
+
+    public void OnNotifyError(TransportType transportType, Exception exception)
+    {
+        _logger.LogError(exception, "OnError: {TransportType} {SessionId}", transportType, SessionId);
+    }
+
+    protected void HeartbeatRegister() => _heartbeat!.RegisterSession(this);
+    protected void HeartbeatUnregister() => _heartbeat!.UnregisterSession(SessionId);
+    protected void HeartbeatUpdate() => _heartbeat!.UpdateSessionActivity(SessionId);
+    protected void ReturnSession() => _functionRouter.InvokeAction<SessionReturnCmd>(new SessionReturnCmd(SessionId));
+    #endregion
+
+    public void Kick(ErrorType reason)
+    {
+        _logger.LogDebug("Session Kick: {Id} - Reason: {Desc}", SessionId, reason);
+        Cleanup(reason);
+    }
+
+    public async Task SendAsync(Memory<byte> data, byte[]? rentedBuffer, TransportType transportType = TransportType.Tcp)
+    {
+        switch (transportType)
         {
-            _logger.LogDebug("OnNotifyReceived: {SessionId}, length: {Length}", SessionId, payload.Length);
-            var context = new ReceivedContext(SessionId, packetType, payload, rentedBuffer);
-            await _io.OnPacketReceived(context);
+            case TransportType.Tcp:
+                {
+                    if (_tcpConnection == null) throw new Exception("TCP 트랜스포트가 바인딩되지 않았습니다.");
+
+                    //_logger.LogDebug($"TCP Send: HexDump: {PacketHelper.ToHexDump(data)}");
+                    var ctx = new TcpSendContext(SessionId, data, rentedBuffer, _tcpConnection.GetSocket());
+                    await _functionRouter.InvokeFunc<TcpSendCmd, Task>(new TcpSendCmd(ctx));
+                }
+                break;
+            case TransportType.Udp:
+                {
+                    if (_udpConnection == null) throw new Exception("UDP 트랜스포트가 바인딩되지 않았습니다.");
+
+                    var seq = _udpConnection!.NextSequence();
+                    if (!data.SetUdpHeader(SessionId, seq))
+                    {
+                        _logger.LogError("UDP 패킷 헤더 설정 실패: {SessionId}, {Seq}, {Ack}", SessionId, seq, 0);
+                        return;
+                    }
+
+                    //_logger.LogDebug($"UDP Send: HexDump: {PacketHelper.ToHexDump(data)}");
+                    var ctx = new UdpSendContext(SessionId, data, rentedBuffer, _udpConnection.GetEndPoint(), seq);
+                    await _functionRouter.InvokeFunc<UdpSendCmd, Task>(new UdpSendCmd(ctx));
+                }
+                break;
+            default: throw new Exception("Invalid transport type");
         }
     }
 
-    public void OnNotifyError(Exception exception)
+    private void Welcome()
     {
-        _logger.LogError(exception, "OnError: {SessionId}", SessionId);
+        if (IsConnected)
+        {
+            return;
+        }
+
+        SetConnected();
+        HeartbeatRegister();
+
+        _logger.LogDebug("Welcome: {SessionId}", SessionId);
     }
-    #endregion
+
+    private void Cleanup(ErrorType reason)
+    {
+        if (IsDisconnected) return;
+        SetDisconnected();
+
+        HeartbeatUnregister();
+        _tcpConnection?.Close();
+        _udpConnection?.Close();
+
+        _functionRouter.InvokeFunc<ReceivedEnqueueCmd, Task>(
+                        new ReceivedEnqueueCmd(new ReceivedContext(SessionId, PacketType.Logout, Memory<byte>.Empty, null)));
+
+        _logger.LogDebug("Cleanup: {SessionId} - Reason: {Desc}", SessionId, reason);
+    }
 }

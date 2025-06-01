@@ -22,6 +22,9 @@ public enum PacketType : ushort
     LoginSuccess = 0x0004,
     Logout = 0x0005,
     LogoutSuccess = 0x0006,
+    KnockKnock = 0x0007,
+    Welcome = 0x0008,
+    Ack = 0x0009,
 
     // Chat Domain (0x0100 ~ 0x01FF)
     Chat = 0x0100,

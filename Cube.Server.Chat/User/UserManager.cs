@@ -1,8 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Cube.Core;
-using Cube.Core.Sessions;
-using Cube.Common.Interface;
 
 namespace Cube.Server.Chat.User;
 
@@ -10,10 +8,9 @@ public interface IUserManager
 {
     bool TryInsertUser(string username, ISession session, out IChatUser? user);
     bool DeleteUser(string sessionId);
-    IChatUser? GetUserBySession(string sessionId);
-    IChatUser? GetUser(string userName);
+    bool TryGetUserBySession(string sessionId, out IChatUser? user);
+    bool TryGetUser(string username, out IChatUser? user);
     IEnumerable<IChatUser> GetAllUsers();
-    bool IsAuthenticated(string sessionId);
     void Stop();
 }
 
@@ -92,40 +89,25 @@ public class UserManager : IUserManager
         return true;
     }
 
-    public IChatUser? GetUserBySession(string sessionId)
+    public bool TryGetUserBySession(string sessionId, out IChatUser? user)
     {
-        if (_sessionToUserMap.TryGetValue(sessionId, out var username))
+        if (!_sessionToUserMap.TryGetValue(sessionId, out var username))
         {
-            return GetUser(username);
-        }
-        return null;
-    }
-
-    public IChatUser? GetUser(string userName)
-    {
-        if (!_users.TryGetValue(userName, out var user))
-        {
-            return null;
+            user = null;
+            return false;
         }
 
-        return user;
+        return TryGetUser(username, out user);
     }
 
-    public IEnumerable<IChatUser> GetAllUsers()
-    {
-        return _users.Values;
-    }
-
-    public bool IsAuthenticated(string sessionId)
-    {
-        return _sessionToUserMap.ContainsKey(sessionId);
-    }
+    public bool TryGetUser(string username, out IChatUser? user) => _users.TryGetValue(username, out user);
+    public IEnumerable<IChatUser> GetAllUsers() => _users.Values;
 
     public void Stop()
     {
         foreach (var user in _users.Values)
         {
-            user.Session.Close(new SessionClose(SocketDisconnect.ApplicationRequest));
+            user.Session.Kick(ErrorType.ApplicationRequest);
         }
     }
 }

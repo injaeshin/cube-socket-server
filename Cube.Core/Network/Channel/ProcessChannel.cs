@@ -3,41 +3,41 @@ using Microsoft.Extensions.Logging;
 
 namespace Cube.Core.Network;
 
-public sealed class ProcessChannel : IDisposable
+public sealed class ProcessChannel<T> : IDisposable where T : IContext
 {
     private readonly ILogger _logger;
-    private readonly Channel<ReceivedContext> _channel;
+    private readonly Channel<T> _channel;
     private readonly CancellationTokenSource _cts;
     private readonly Task _workerTask;
-    private readonly Func<ReceivedContext, Task> _onProcess;
+
+    private readonly Func<T, Task> _onProcess;
     private bool _disposed = false;
 
-    public Task Completion => _workerTask;
-
-    public ProcessChannel(ILoggerFactory loggerFactory, Func<ReceivedContext, Task> onProcess)
+    public ProcessChannel(ILoggerFactory loggerFactory, Func<T, Task> onProcess)
     {
-        _logger = loggerFactory.CreateLogger<ProcessChannel>();
-        _cts = new CancellationTokenSource();
-        _channel = Channel.CreateUnbounded<ReceivedContext>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
-        _workerTask = Task.Run(WorkerAsync);
+        _logger = loggerFactory.CreateLogger<ProcessChannel<T>>();
         _onProcess = onProcess;
+
+        _cts = new CancellationTokenSource();
+        _channel = Channel.CreateUnbounded<T>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+        _workerTask = Task.Run(WorkerAsync);
     }
 
-    public async Task EnqueueAsync(ReceivedContext packet)
+    public async Task EnqueueAsync(T ctx)
     {
         try
         {
-            await _channel.Writer.WriteAsync(packet);
+            await _channel.Writer.WriteAsync(ctx);
         }
         catch (ChannelClosedException)
         {
-            _logger.LogDebug("[RecvQueue] {SessionId} Channel already closed. Packet dropped.", packet.SessionId);
-            packet.Return();
+            _logger.LogDebug("[RecvQueue] {SessionId} Channel already closed. Packet dropped.", ctx.SessionId);
+            ctx.Return();
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "[RecvQueue] {SessionId} Failed to enqueue packet", packet.SessionId);
-            packet.Return();
+            _logger.LogError(e, "[RecvQueue] {SessionId} Failed to enqueue packet", ctx.SessionId);
+            ctx.Return();
         }
     }
 
@@ -45,9 +45,9 @@ public sealed class ProcessChannel : IDisposable
     {
         try
         {
-            await foreach (var packet in _channel.Reader.ReadAllAsync(_cts.Token))
+            await foreach (var ctx in _channel.Reader.ReadAllAsync(_cts.Token))
             {
-                await OnProcessAsync(packet);
+                await OnProcessAsync(ctx);
             }
         }
         catch (OperationCanceledException)
@@ -60,15 +60,16 @@ public sealed class ProcessChannel : IDisposable
         }
     }
 
-    private async Task OnProcessAsync(ReceivedContext packet)
+    private async Task OnProcessAsync(T ctx)
     {
         try
         {
-            await _onProcess(packet);
+            await _onProcess(ctx);
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "[RecvQueue] {SessionId} Failed to process packet", packet.SessionId);
+            _logger.LogError(e, "[RecvQueue] {SessionId} Failed to process packet", ctx.SessionId);
+            ctx.Return();
         }
     }
 
@@ -80,8 +81,7 @@ public sealed class ProcessChannel : IDisposable
 
         _cts.Cancel();
         _channel.Writer.TryComplete();
-        _workerTask.Wait(TimeSpan.FromSeconds(30));
-        _cts.Dispose();
+        _workerTask.Wait(TimeSpan.FromSeconds(1));
     }
 
     public void Dispose()
@@ -98,6 +98,7 @@ public sealed class ProcessChannel : IDisposable
         if (disposing)
         {
             Close();
+            _cts.Dispose();
         }
     }
 }

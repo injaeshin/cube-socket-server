@@ -1,58 +1,110 @@
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
-using System.Net.Sockets;
-using Cube.Common.Interface;
+using System.Net;
 using Cube.Core.Network;
-using Cube.Common;
+using Cube.Core.Router;
+using Cube.Packet;
 
 namespace Cube.Core.Sessions;
 
-public interface ISessionCreator
+public interface ISessionManager
 {
-    bool CreateAndRunSession(Socket socket, ITransport transport);
+    void Run();
+    void Close();
+
+    Task SendToAll(Memory<byte> data, byte[]? rentedBuffer);
+    void Kick(string sessionId, ErrorType reason);
+
+    bool TryGetSession(string sessionId, out ISession session);
 }
 
-public interface ISessionManager : ISessionCreator
+public abstract class SessionManager<T> : ISessionManager where T : ICoreSession
 {
-    // bool TryGetSessionId(EndPoint ep, out string sessionId);
-    bool TryGetSession(string sessionId, out ISession? session);
+    private readonly ILogger _logger;
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly IFunctionRouter _functionRouter;
+    private readonly IHeartbeat _heartbeatMonitor;
 
-    // bool CreateUdpSession(string sessionId, EndPoint ep, Func<EndPoint, ushort, ReadOnlyMemory<byte>, Task> udpSendToAsync);
-    // bool TryGetUdpSession(string sessionId, out UdpSessionState? udpSession);
-    // void RemoveUdpSession(string sessionId);
-
-    // void SetEndPointToSessionId(EndPoint ep, string sessionId);
-    // void RemoveEndPointToSessionId(EndPoint ep);
-
-    void Run(SessionIOHandler sessionIOEvent);
-    //void Stop();
-}
-
-public abstract class SessionManager<T>(ILoggerFactory loggerFactory, SessionHeartbeat heartbeatMonitor) : ISessionManager, ISessionCreator where T : ISession, ISessionExecutor
-{
-    private readonly ILogger _logger = loggerFactory.CreateLogger<SessionManager<T>>();
-    private readonly SessionHeartbeat _heartbeatMonitor = heartbeatMonitor;
     private readonly ConcurrentDictionary<string, T> _sessions = new();
+    private volatile bool _running = false;
 
-    // private readonly ConcurrentDictionary<string, UdpSessionState> _UdpSessions = new();
-    // private readonly ConcurrentDictionary<EndPoint, string> _endPointToSessionId = new();
+    private readonly Timer _resendTimer;
 
-    private SessionEventHandler _eventHandler = null!;
-    protected abstract T CreateNewSession(Socket socket, SessionEventHandler events);
-    private bool _isRunning = false;
-
-    public void Run(SessionIOHandler sessionIOEvent)
+    public SessionManager(ILoggerFactory loggerFactory, IFunctionRouter functionRouter, IHeartbeat heartbeatMonitor)
     {
-        if (_isRunning) throw new InvalidOperationException("SessionManager is already running");
-        _eventHandler = CreateSessionEvents(sessionIOEvent);
-        _isRunning = true;
+        _logger = loggerFactory.CreateLogger<SessionManager<T>>();
+        _loggerFactory = loggerFactory;
+        _functionRouter = functionRouter;
+        _heartbeatMonitor = heartbeatMonitor;
+
+        _resendTimer = new Timer(
+            _ => ResendUnacked(),
+            null,
+            CoreConsts.RESEND_INTERVAL_MS,
+            CoreConsts.RESEND_INTERVAL_MS
+        );
+
+
+        _functionRouter.AddFunc<TcpConnectedCmd, bool>(cmd => OnTcpClientConnected(cmd.Connection));
+        _functionRouter.AddFunc<UdpConnectedCmd, bool>(cmd => OnUdpClientConnected(cmd.SessionId, cmd.Sequence, cmd.Endpoint, cmd.Connection));
+
+        _functionRouter.AddAction<UdpReceivedCmd>(cmd => OnUdpReceived(cmd.Context));
+        _functionRouter.AddAction<UdpReceivedAckCmd>(cmd => OnUdpAckReceived(cmd.SessionId, cmd.Ack));
+        _functionRouter.AddAction<UdpTrackSentCmd>(cmd => OnUdpTrackSent(cmd.Context));
+
+        _functionRouter.AddAction<SessionReturnCmd>(cmd => DeleteSession(cmd.SessionId));
     }
 
-    public bool CreateAndRunSession(Socket socket, ITransport transport)
-    {
-        if (!_isRunning) throw new InvalidOperationException("SessionManager is not running");
+    protected abstract T CreateSession(ILoggerFactory logger, IHeartbeat heartbeat, IFunctionRouter functionRouter);
 
-        if (_sessions.Count >= Consts.MAX_CONNECTIONS)
+    public void Run()
+    {
+        if (_running) throw new InvalidOperationException("SessionManager is already running");
+        _running = true;
+    }
+
+    public void Close()
+    {
+        if (!_running) throw new InvalidOperationException("SessionManager is not running");
+        _running = false;
+
+        _heartbeatMonitor.Close();
+        _resendTimer.Dispose();
+
+        foreach (var session in _sessions.Values)
+        {
+            session.Kick(ErrorType.ApplicationRequest);
+        }
+
+        _sessions.Clear();
+    }
+
+    public void Kick(string sessionId, ErrorType reason)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session))
+        {
+            return;
+        }
+
+        session.Kick(reason);
+    }
+
+    private void DeleteSession(string sessionId) => _sessions.TryRemove(sessionId, out _);
+
+    public async Task SendToAll(Memory<byte> data, byte[]? rentedBuffer)
+    {
+        foreach (var session in _sessions.Values)
+        {
+            var (newData, newRentedBuffer) = PacketHelper.CopyTo(data);
+            await session.SendAsync(newData, newRentedBuffer);
+        }
+    }
+
+    public bool OnTcpClientConnected(ITcpConnection conn)
+    {
+        if (!_running) throw new InvalidOperationException("SessionManager is not running");
+
+        if (_sessions.Count >= CoreConsts.MAX_CONNECTIONS)
         {
             _logger.LogWarning("세션 생성 실패: 최대 접속 수 초과");
             return false;
@@ -60,11 +112,14 @@ public abstract class SessionManager<T>(ILoggerFactory loggerFactory, SessionHea
 
         try
         {
-            var session = CreateNewSession(socket, _eventHandler);
-            _sessions.TryAdd(session.SessionId, session);
+            var session = CreateSession(_loggerFactory, _heartbeatMonitor, _functionRouter);
+            if (!_sessions.TryAdd(session.SessionId, session))
+            {
+                _logger.LogWarning("세션 생성 실패: {SessionId}", session.SessionId);
+                return false;
+            }
 
-            session.Bind(transport);
-            session.Run();
+            session.Bind(conn);
         }
         catch (Exception ex)
         {
@@ -75,76 +130,125 @@ public abstract class SessionManager<T>(ILoggerFactory loggerFactory, SessionHea
         return true;
     }
 
-    private SessionEventHandler CreateSessionEvents(SessionIOHandler ioEvent)
+    public bool OnUdpClientConnected(string sessionId, ushort seq, EndPoint endpoint, IUdpConnection conn)
     {
-        return new SessionEventHandler
+        if (!_running) throw new InvalidOperationException("SessionManager is not running");
+
+        try
         {
-            Resource = new SessionResourceHandler
+            if (!_sessions.TryGetValue(sessionId, out var session))
             {
-                OnReturnSession = (session) =>
-                {
-                    _eventHandler.IO.OnSessionClosed(session.SessionId);
-                    _sessions.TryRemove(session.SessionId, out _);
-                }
-            },
-            KeepAlive = new SessionKeepAliveHandler
+                _logger.LogWarning("세션 존재 하지 않음: {SessionId}", sessionId);
+                return false;
+            }
+
+            if (session.IsDisconnected)
             {
-                OnRegister = _heartbeatMonitor.RegisterSession,
-                OnUnregister = _heartbeatMonitor.UnregisterSession,
-                OnUpdate = _heartbeatMonitor.UpdateSessionActivity
-            },
-            IO = ioEvent
-        };
-    }
+                _logger.LogWarning("세션 연결 끊김: {SessionId}", sessionId);
+                return false;
+            }
 
-    // public bool TryGetSessionId(EndPoint ep, out string sessionId)
-    // {
-    //     sessionId = _endPointToSessionId.GetValueOrDefault(ep, String.Empty);
-    //     if (string.IsNullOrEmpty(sessionId))
-    //     {
-    //         _logger.LogWarning("세션 ID 조회 실패: {EndPoint}", ep);
-    //         return false;
-    //     }
+            // 이미 존재하는 세션인지 확인
+            if (session.UdpConnection != null)
+            {
+                session.CloseUdpConnection();
+            }
 
-    //     return true;
-    // }
+            session.Bind(conn);
+            session.UdpConnection!.InitExpectedSeqence(seq);
 
-    public bool TryGetSession(string sessionId, out ISession? session)
-    {
-        if (!_sessions.TryGetValue(sessionId, out var s))
+            var (data, rentedBuffer) = new PacketWriter(PacketType.Welcome).ToUdpPacket();
+            _ = session.SendAsync(data, rentedBuffer, TransportType.Udp);
+        }
+        catch (Exception ex)
         {
-            session = null;
+            _logger.LogError(ex, "세션 생성 중 오류 발생");
             return false;
         }
 
-        session = s;
         return true;
     }
 
-    // public bool TryGetUdpSession(string sessionId, out UdpSessionState? udpSession)
-    // {
-    //     if (!_UdpSessions.TryGetValue(sessionId, out var s))
-    //     {
-    //         udpSession = null;
-    //         return false;
-    //     }
 
-    //     udpSession = s;
-    //     return true;
-    // }
+    public void OnUdpAckReceived(string sessionId, ushort ack)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session))
+        {
+            return;
+        }
 
-    // public bool CreateUdpSession(string sessionId, EndPoint ep, Func<EndPoint, ushort, ReadOnlyMemory<byte>, Task> udpSendToAsync)
-    // {
-    //     if (!_UdpSessions.TryAdd(sessionId, new UdpSessionState(sessionId, ep, udpSendToAsync)))
-    //     {
-    //         _logger.LogWarning("UDP 세션 생성 실패: {SessionId}", sessionId);
-    //         return false;
-    //     }
+        if (session.IsDisconnected || session.UdpConnection == null)
+        {
+            _logger.LogWarning("세션 연결 끊김: {SessionId}", sessionId);
+            return;
+        }
 
-    //     return true;
-    // }
+        session.UdpConnection.Acknowledge(ack);
+    }
 
-    // public void RemoveUdpSession(string sessionId) => _UdpSessions.TryRemove(sessionId, out _);
-    // public void SetEndPointToSessionId(EndPoint ep, string sessionId) => _endPointToSessionId[ep] = sessionId;
-    // public void RemoveEndPointToSessionId(EndPoint ep) => _endPointToSessionId.TryRemove(ep, out _);
+    public void OnUdpTrackSent(UdpSendContext sendContext)
+    {
+        if (!_sessions.TryGetValue(sendContext.SessionId, out var session))
+        {
+            return;
+        }
+
+        if (session.IsDisconnected || session.UdpConnection == null)
+        {
+            _logger.LogWarning("세션 연결 끊김: {SessionId}", sendContext.SessionId);
+            return;
+        }
+
+        session.UdpConnection.Track(sendContext);
+    }
+
+    public void OnUdpReceived(UdpReceivedContext ctx)
+    {
+        if (!_running) throw new InvalidOperationException("SessionManager is not running");
+
+        if (ctx.PacketType == PacketType.Ack)
+        {
+            OnUdpAckReceived(ctx.SessionId, ctx.Ack);
+            return;
+        }
+
+        if (!_sessions.TryGetValue(ctx.SessionId, out var session))
+        {
+            _logger.LogWarning("세션 존재 하지 않음: {SessionId}", ctx.SessionId);
+            return;
+        }
+
+        if (session.IsDisconnected || session.UdpConnection == null)
+        {
+            _logger.LogWarning("세션 연결 끊김: {SessionId}", ctx.SessionId);
+            return;
+        }
+
+        session.UdpConnection.UpdateReceived(ctx);
+    }
+
+    public bool TryGetSession(string sessionId, out ISession session)
+    {
+        session = default!;
+        if (!_sessions.TryGetValue(sessionId, out var ss))
+        {
+            return false;
+        }
+
+        session = ss;
+        return true;
+    }
+
+    private void ResendUnacked()
+    {
+        if (!_running) return;
+
+        var now = DateTime.UtcNow;
+        foreach (var session in _sessions.Values)
+        {
+            if (session.IsDisconnected || session.UdpConnection == null) continue;
+
+            session.UdpConnection.ResendUnacked(now);
+        }
+    }
 }
