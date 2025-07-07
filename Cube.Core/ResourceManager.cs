@@ -30,28 +30,26 @@ public class ResourceManager : IResourceManager
     private readonly ILoggerFactory _loggerFactory;
     private readonly Dictionary<ResourceKey, IAsyncResource> _resources = [];
     private readonly ConcurrentDictionary<string, string> _status = new();
-    private readonly NetworkConfig _networkConfig;
 
-    public ResourceManager(ILoggerFactory loggerFactory, ISettingsService settingsService)
+    public ResourceManager(ILoggerFactory loggerFactory)
     {
         _logger = loggerFactory.CreateLogger<ResourceManager>();
         _loggerFactory = loggerFactory;
-        _networkConfig = settingsService.Network;
 
         CreateResources(loggerFactory);
     }
 
     private void CreateResources(ILoggerFactory loggerFactory)
     {
-        var saeaPool = new SocketAsyncEventArgsPool(loggerFactory, _networkConfig.MaxConnections);
+        var saeaPool = new SocketAsyncEventArgsPool(loggerFactory, AppSettings.Instance.Network.MaxConnections);
         var saeaPoolHandler = new SAEAPoolHandler(saeaPool);
 
         CreateResource(ResourceKey.SocketAsyncEventArgsPool, saeaPool);
-        CreateResource(ResourceKey.TcpConnectionPool, new TcpConnectionPool(loggerFactory, saeaPoolHandler, _networkConfig.MaxConnections));
+        CreateResource(ResourceKey.TcpConnectionPool, new TcpConnectionPool(loggerFactory, saeaPoolHandler, AppSettings.Instance.Network.MaxConnections));
 
-        if (_networkConfig.UdpEnabled)
+        if (AppSettings.Instance.Network.UdpEnabled)
         {
-            CreateResource(ResourceKey.UdpConnectionPool, new UdpConnectionPool(loggerFactory, _networkConfig));
+            CreateResource(ResourceKey.UdpConnectionPool, new UdpConnectionPool(loggerFactory));
         }
     }
 

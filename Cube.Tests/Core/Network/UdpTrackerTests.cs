@@ -9,7 +9,7 @@ public class UdpTrackerTests
     [Fact]
     public async Task Track_And_Ack_Works_Correctly()
     {
-        var tracker = new UdpTracker(300);
+        var tracker = new UdpTracker();
         bool onSendCalled = false;
         //bool onReceivedCalled = false;
 
@@ -46,7 +46,7 @@ public class UdpTrackerTests
     [Fact]
     public async Task UpdateReceived_Calls_OnReceived_For_InOrder_And_OutOfOrder()
     {
-        var tracker = new UdpTracker(300);
+        var tracker = new UdpTracker();
         List<byte> receivedPackets = new();
 
         tracker.Run(

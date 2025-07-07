@@ -22,7 +22,6 @@ public class NetworkManager : INetworkManager
     private readonly ILogger _logger;
     private readonly IFunctionRouter _functionRouter;
     private readonly ILoggerFactory _loggerFactory;
-    private readonly NetworkConfig _networkConfig;
 
     private IResourceManager _resourceManager = null!;
 
@@ -34,12 +33,11 @@ public class NetworkManager : INetworkManager
 
     private bool _running = false;
 
-    public NetworkManager(ILoggerFactory loggerFactory, IResourceManager resourceManager, IFunctionRouter functionRouter, ISettingsService settingsService)
+    public NetworkManager(ILoggerFactory loggerFactory, IResourceManager resourceManager, IFunctionRouter functionRouter)
     {
         _loggerFactory = loggerFactory;
         _logger = _loggerFactory.CreateLogger<NetworkManager>();
         _resourceManager = resourceManager;
-        _networkConfig = settingsService.Network;
 
         _functionRouter = functionRouter;
         _functionRouter.AddFunc<ClientAcceptedCmd, Task>(cmd => OnClientAcceptedAsync(cmd.Socket));
@@ -55,7 +53,7 @@ public class NetworkManager : INetworkManager
         CreateTransport(shouldUdp);
 
         if (_tcpAcceptor == null) throw new InvalidOperationException("TCP Acceptor is not created");
-        _ = _tcpAcceptor.RunAsync(tcpPort, _networkConfig.ListenBacklog);
+        _ = _tcpAcceptor.RunAsync(tcpPort);
 
         if (shouldUdp)
         {

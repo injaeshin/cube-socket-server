@@ -34,7 +34,5 @@ public static class ServiceRegister
     public static void AddHostedServices(IServiceCollection services)
     {
         services.AddHostedService<App>();
-        services.AddHostedService(provider => provider.GetRequiredService<SessionHeartbeat>());
-        services.AddHostedService(provider => provider.GetRequiredService<NetworkService>());
     }
 }

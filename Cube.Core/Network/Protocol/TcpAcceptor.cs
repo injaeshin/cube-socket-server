@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
 using Cube.Core.Pool;
 using Cube.Core.Router;
+using Cube.Core.Settings;
 
 namespace Cube.Core.Network;
 
@@ -28,7 +29,7 @@ public class TcpAcceptor : IDisposable
         _listenSocket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.NoDelay, true);
     }
 
-    public async Task RunAsync(int port, int listenBacklog)
+    public async Task RunAsync(int port)
     {
         if (_closed)
         {
@@ -38,7 +39,7 @@ public class TcpAcceptor : IDisposable
         try
         {
             _listenSocket.Bind(new IPEndPoint(IPAddress.Any, port));
-            _listenSocket.Listen(listenBacklog);
+            _listenSocket.Listen(AppSettings.Instance.Network.ListenBacklog);
         }
         catch (Exception ex)
         {

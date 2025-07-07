@@ -31,23 +31,19 @@ public abstract class SessionManager<T> : ISessionManager where T : ICoreSession
     private volatile bool _running = false;
 
     private readonly Timer _resendTimer;
-    private readonly NetworkConfig _networkConfig;
-    private readonly HeartbeatConfig _heartbeatConfig;
 
-    public SessionManager(ILoggerFactory loggerFactory, IFunctionRouter functionRouter, IHeartbeat heartbeatMonitor, ISettingsService settingsService)
+    public SessionManager(ILoggerFactory loggerFactory, IFunctionRouter functionRouter, IHeartbeat heartbeatMonitor)
     {
         _logger = loggerFactory.CreateLogger<SessionManager<T>>();
         _loggerFactory = loggerFactory;
         _functionRouter = functionRouter;
         _heartbeatMonitor = heartbeatMonitor;
-        _networkConfig = settingsService.Network;
-        _heartbeatConfig = settingsService.Heartbeat;
 
         _resendTimer = new Timer(
             _ => ResendUnacked(),
             null,
-            _heartbeatConfig.ResendIntervalMs,
-            _heartbeatConfig.ResendIntervalMs
+            AppSettings.Instance.Heartbeat.ResendIntervalMs,
+            AppSettings.Instance.Heartbeat.ResendIntervalMs
         );
 
         _functionRouter.AddFunc<TcpConnectedCmd, bool>(cmd => OnTcpClientConnected(cmd.Connection));
@@ -109,7 +105,7 @@ public abstract class SessionManager<T> : ISessionManager where T : ICoreSession
     {
         if (!_running) throw new InvalidOperationException("SessionManager is not running");
 
-        if (_sessions.Count >= _networkConfig.MaxConnections)
+        if (_sessions.Count >= AppSettings.Instance.Network.MaxConnections)
         {
             _logger.LogWarning("세션 생성 실패: 최대 접속 수 초과");
             return false;

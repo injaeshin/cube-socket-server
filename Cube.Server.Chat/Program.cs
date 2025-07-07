@@ -1,6 +1,8 @@
 ﻿using Cube.Core;
+using Cube.Core.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Cube.Server.Chat;
 
@@ -12,12 +14,15 @@ public class Program
             .ConfigureAppConfiguration((context, config) =>
             {
                 config.SetBasePath(Directory.GetCurrentDirectory());
-                config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+                config.AddJsonFile("Appsettings.json", optional: false, reloadOnChange: true);
             })
             // 로그 설정은 appsettings.json 에서 설정을 자동 적용
             .ConfigureServices((context, services) =>
             {
-                CoreHelper.AddServices(services, context.Configuration);
+                AppSettings.Initialize(context.Configuration);
+                LoggerFactoryHelper.Initialize(LoggerFactory.Create(builder => builder.AddConsole()));
+
+                CoreHelper.AddServices(services);
                 ServiceRegister.AddServices(services);
 
                 CoreHelper.AddHostedServices(services);

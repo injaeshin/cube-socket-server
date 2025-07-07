@@ -12,14 +12,8 @@ namespace Cube.Core;
 
 public static class CoreHelper
 {
-    public static IServiceCollection AddServices(
-           this IServiceCollection services,
-           IConfiguration configuration)
+    public static IServiceCollection AddServices(this IServiceCollection services)
     {
-        // 설정 바인딩
-        services.Configure<CoreConfig>(configuration);
-        services.AddSingleton<ISettingsService, SettingsService>();
-
         // 기본 서비스
         services.AddSingleton<IFunctionRouter, FunctionRouter>();
 
@@ -30,7 +24,7 @@ public static class CoreHelper
         services.AddSingleton<INetworkService>(sp => sp.GetRequiredService<NetworkService>());
         services.AddSingleton<INetworkManager, NetworkManager>();
 
-        services.AddSingleton<IResourceManager>(sp => new ResourceManager(sp.GetRequiredService<ILoggerFactory>(), sp.GetRequiredService<ISettingsService>()));
+        services.AddSingleton<IResourceManager>(sp => new ResourceManager(sp.GetRequiredService<ILoggerFactory>()));
         services.AddSingleton<IPoolHandler<SocketAsyncEventArgs>>(sp => sp.GetRequiredService<IResourceManager>().GetPoolHandler(ResourceKey.SocketAsyncEventArgsPool));
 
         return services;

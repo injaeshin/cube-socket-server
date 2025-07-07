@@ -18,10 +18,10 @@ public class ChatClient : IDisposable
 
     private readonly string _username = $"Player{Random.Shared.Next(100000000, 999999999)}";
 
-    public ChatClient(string ip, int tcpPort, int udpPort, int resendIntervalMs)
+    public ChatClient(string ip, int tcpPort, int udpPort)
     {
         _tcpClient = new TcpClient(ip, tcpPort);
-        _udpClient = new UdpClient(ip, udpPort, resendIntervalMs);
+        _udpClient = new UdpClient(ip, udpPort);
         _packetHandler = new PacketHandler(_tcpClient, _udpClient);
 
         _packetHandler.OnChatMessageReceived += (sender, message) => OnChatMessageReceived?.Invoke(sender, message);

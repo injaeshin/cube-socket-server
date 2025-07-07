@@ -32,11 +32,11 @@ public class UdpConnection : IUdpConnection
 
     private bool _closed = false;
 
-    public UdpConnection(ILoggerFactory loggerFactory, IUdpConnectionPool udpConnectionPool, int resendIntervalMs)
+    public UdpConnection(ILoggerFactory loggerFactory, IUdpConnectionPool udpConnectionPool)
     {
         _logger = loggerFactory.CreateLogger<UdpConnection>();
         _udpConnectionPool = udpConnectionPool;
-        _sequenceTracker = new UdpTracker(resendIntervalMs);
+        _sequenceTracker = new UdpTracker();
     }
 
     public void BindEndPoint(EndPoint remoteEndPoint)

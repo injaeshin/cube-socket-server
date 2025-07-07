@@ -1,14 +1,14 @@
 using System.Collections.Concurrent;
+using Cube.Core.Settings;
 
 namespace Cube.Core.Network;
 
-public class UdpTracker(int resendIntervalMs)
+public class UdpTracker()
 {
     private ushort _expectedSequence = 0;
     private ushort _currentSequence = 0;
     private readonly SortedDictionary<ushort, UdpReceivedContext> _outOfOrderPackets = new();
     private readonly ConcurrentDictionary<ushort, UnackedContext> _unackedPackets = new();
-    private readonly int _resendIntervalMs = resendIntervalMs;
 
     private Func<UdpSendContext, Task>? _onSend;
     private Func<UdpReceivedContext, Task>? _onReceived;
@@ -66,7 +66,7 @@ public class UdpTracker(int resendIntervalMs)
     {
         foreach (var (_, entry) in _unackedPackets)
         {
-            if ((now - entry.LastSent).TotalMilliseconds > _resendIntervalMs)
+            if ((now - entry.LastSent).TotalMilliseconds > AppSettings.Instance.Network.UdpResendIntervalMs)
             {
                 entry.LastSent = now;
                 _ = _onSend?.Invoke(entry.SendContext);

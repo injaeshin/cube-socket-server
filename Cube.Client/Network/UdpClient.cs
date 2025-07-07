@@ -21,7 +21,7 @@ public class UdpClient : IDisposable
     public event Action<string>? OnStatusChanged;
     public event Action<PacketType, ReadOnlyMemory<byte>>? OnPacketReceived;
 
-    public UdpClient(string serverAddress, int serverPort, int resendIntervalMs)
+    public UdpClient(string serverAddress, int serverPort)
     {
         _ip = serverAddress;
         _port = serverPort;
@@ -29,7 +29,7 @@ public class UdpClient : IDisposable
         _socket.OnStatusChanged += status => OnStatusChanged?.Invoke(status);
         _socket.OnDataReceived += OnSocketDataReceived;
 
-        _tracker = new UdpTracker(resendIntervalMs);
+        _tracker = new UdpTracker();
         _tracker.Run(
             async ctx => await Task.Run(() => _socket.Send(ctx.Data)),
             async ctx => await Task.Run(() =>

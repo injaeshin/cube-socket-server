@@ -18,9 +18,9 @@ public class UdpConnectionPool : IUdpConnectionPool
     private readonly ObjectPool<IUdpConnection> _connPool;
     private volatile bool _stopped = false;
 
-    public UdpConnectionPool(ILoggerFactory loggerFactory, NetworkConfig networkConfig)
+    public UdpConnectionPool(ILoggerFactory loggerFactory)
     {
-        _connPool = new ObjectPool<IUdpConnection>(() => new UdpConnection(loggerFactory, this, networkConfig.UdpResendIntervalMs), networkConfig.MaxConnections);
+        _connPool = new ObjectPool<IUdpConnection>(() => new UdpConnection(loggerFactory, this), AppSettings.Instance.Network.MaxConnections);
     }
 
     public Socket Rent() => throw new NotSupportedException();

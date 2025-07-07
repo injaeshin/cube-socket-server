@@ -7,9 +7,8 @@ class Program
         const string SERVER_IP = "127.0.0.1";
         const int TCP_PORT = 7777;
         const int UDP_PORT = 7778;
-        const int RESEND_INTERVAL_MS = 300;
 
-        using var client = new ChatClient(SERVER_IP, TCP_PORT, UDP_PORT, RESEND_INTERVAL_MS);
+        using var client = new ChatClient(SERVER_IP, TCP_PORT, UDP_PORT);
 
         // 이벤트 핸들러 등록
         client.OnError += (message) => Console.WriteLine($"에러: {message}");

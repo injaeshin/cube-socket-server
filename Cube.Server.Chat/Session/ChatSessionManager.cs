@@ -14,8 +14,8 @@ public class ChatSessionManager : SessionManager<ChatSession>, IChatSessionManag
 {
     private readonly ILogger _logger;
 
-    public ChatSessionManager(ILoggerFactory loggerFactory, IFunctionRouter functionRouter, IHeartbeat heartbeatMonitor, ISettingsService settingsService)
-        : base(loggerFactory, functionRouter, heartbeatMonitor, settingsService)
+    public ChatSessionManager(ILoggerFactory loggerFactory, IFunctionRouter functionRouter, IHeartbeat heartbeatMonitor)
+        : base(loggerFactory, functionRouter, heartbeatMonitor)
     {
         _logger = loggerFactory.CreateLogger<ChatSessionManager>();
     }

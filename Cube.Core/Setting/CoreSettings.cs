@@ -24,9 +24,3 @@ public class HeartbeatConfig
     public int PingTimeout { get; set; }
     public int ResendIntervalMs { get; set; }
 }
-
-public class CoreConfig
-{
-    public NetworkConfig Network { get; set; } = new();
-    public HeartbeatConfig Heartbeat { get; set; } = new();
-}

@@ -21,12 +21,12 @@ public interface IHeartbeat : ISessionHeartbeat
 }
 
 
-public class SessionHeartbeat(ILogger<SessionHeartbeat> logger, HeartbeatConfig heartbeatConfig) : IHostedService, IHeartbeat
+public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService, IHeartbeat
 {
     private readonly ILogger<SessionHeartbeat> _logger = logger;
     private readonly ConcurrentDictionary<string, HeartbeatState> _sessions = new();
-    private readonly TimeSpan _heartbeatInterval = TimeSpan.FromSeconds(heartbeatConfig.Interval);
-    private readonly TimeSpan _pingTimeout = TimeSpan.FromSeconds(heartbeatConfig.PingTimeout);
+    private readonly TimeSpan _heartbeatInterval = TimeSpan.FromSeconds(AppSettings.Instance.Heartbeat.Interval);
+    private readonly TimeSpan _pingTimeout = TimeSpan.FromSeconds(AppSettings.Instance.Heartbeat.PingTimeout);
     private Task? _workTask;
     private CancellationTokenSource _cts = null!;
 
