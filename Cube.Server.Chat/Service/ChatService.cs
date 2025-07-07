@@ -1,5 +1,5 @@
-using Cube.Core;
 using Cube.Packet;
+using Cube.Packet.Builder;
 using Cube.Server.Chat.Model;
 
 namespace Cube.Server.Chat.Service;

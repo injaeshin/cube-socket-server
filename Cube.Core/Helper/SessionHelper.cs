@@ -1,9 +1,6 @@
-using System.Text;
-using Cube.Packet;
-
 namespace Cube.Core;
 
-public class CoreHelper
+public class SessionHelper
 {
     public static string CreateSessionId()
     {

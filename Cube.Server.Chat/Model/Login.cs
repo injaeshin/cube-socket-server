@@ -1,5 +1,4 @@
-﻿
-using Cube.Packet;
+﻿using Cube.Packet.Builder;
 
 namespace Cube.Server.Chat.Model;
 

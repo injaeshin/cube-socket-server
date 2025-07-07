@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace Cube.Packet;
+namespace Cube.Packet.Builder;
 
 public class PacketReader
 {

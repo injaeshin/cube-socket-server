@@ -28,7 +28,7 @@ public class TcpAcceptor : IDisposable
         _listenSocket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.NoDelay, true);
     }
 
-    public async Task RunAsync(int port)
+    public async Task RunAsync(int port, int listenBacklog)
     {
         if (_closed)
         {
@@ -38,7 +38,7 @@ public class TcpAcceptor : IDisposable
         try
         {
             _listenSocket.Bind(new IPEndPoint(IPAddress.Any, port));
-            _listenSocket.Listen(CoreConsts.LISTEN_BACKLOG);
+            _listenSocket.Listen(listenBacklog);
         }
         catch (Exception ex)
         {

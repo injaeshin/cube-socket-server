@@ -3,6 +3,8 @@ using Microsoft.Extensions.Logging;
 using Cube.Core.Network;
 using Cube.Core.Pool;
 using Cube.Core.Router;
+using Cube.Packet.Builder;
+using Cube.Core.Settings;
 using Cube.Packet;
 
 namespace Cube.Core;
@@ -20,6 +22,7 @@ public class NetworkManager : INetworkManager
     private readonly ILogger _logger;
     private readonly IFunctionRouter _functionRouter;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly NetworkConfig _networkConfig;
 
     private IResourceManager _resourceManager = null!;
 
@@ -31,11 +34,12 @@ public class NetworkManager : INetworkManager
 
     private bool _running = false;
 
-    public NetworkManager(ILoggerFactory loggerFactory, IResourceManager resourceManager, IFunctionRouter functionRouter)
+    public NetworkManager(ILoggerFactory loggerFactory, IResourceManager resourceManager, IFunctionRouter functionRouter, ISettingsService settingsService)
     {
         _loggerFactory = loggerFactory;
         _logger = _loggerFactory.CreateLogger<NetworkManager>();
         _resourceManager = resourceManager;
+        _networkConfig = settingsService.Network;
 
         _functionRouter = functionRouter;
         _functionRouter.AddFunc<ClientAcceptedCmd, Task>(cmd => OnClientAcceptedAsync(cmd.Socket));
@@ -51,7 +55,7 @@ public class NetworkManager : INetworkManager
         CreateTransport(shouldUdp);
 
         if (_tcpAcceptor == null) throw new InvalidOperationException("TCP Acceptor is not created");
-        _ = _tcpAcceptor.RunAsync(tcpPort);
+        _ = _tcpAcceptor.RunAsync(tcpPort, _networkConfig.ListenBacklog);
 
         if (shouldUdp)
         {
@@ -145,12 +149,12 @@ public class NetworkManager : INetworkManager
             {
                 case PacketType.Ack:
                     _logger.LogDebug("UDP Ack 수신: {EndPoint}, sessionId: {SessionId}", ctx.RemoteEndPoint, ctx.SessionId);
-                    _functionRouter.InvokeAction<UdpReceivedAckCmd>(new UdpReceivedAckCmd(ctx.SessionId, ctx.Ack));                    
+                    _functionRouter.InvokeAction<UdpReceivedAckCmd>(new UdpReceivedAckCmd(ctx.SessionId, ctx.Ack));
                     break;
 
                 case PacketType.KnockKnock:
                     var udpConnection = _udpConnectionPool.Rent(ctx.RemoteEndPoint) ?? throw new InvalidOperationException("UDP Endpoint is not created");
-                    if (!_functionRouter.InvokeFunc<UdpConnectedCmd, bool>(new UdpConnectedCmd(ctx.SessionId, ctx.Sequence, ctx.RemoteEndPoint, udpConnection)))
+                    if (!_functionRouter.InvokeFunc<UdpConnectedCmd, bool>(new UdpConnectedCmd(ctx.SessionId, ctx.Sequence, udpConnection)))
                     {
                         _logger.LogError("Session 생성 실패");
                         _udpConnectionPool.Return(udpConnection);

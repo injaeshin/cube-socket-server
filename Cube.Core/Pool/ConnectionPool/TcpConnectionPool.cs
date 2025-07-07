@@ -21,7 +21,7 @@ public class TcpConnectionPool : ITcpConnectionPool
 
     private volatile bool _stopped = false;
 
-    public TcpConnectionPool(ILoggerFactory loggerFactory, IPoolHandler<SocketAsyncEventArgs> poolHandler, int poolSize = CoreConsts.MAX_CONNECTIONS)
+    public TcpConnectionPool(ILoggerFactory loggerFactory, IPoolHandler<SocketAsyncEventArgs> poolHandler, int poolSize)
     {
         _saeaPoolHandler = poolHandler;
         _bufferPool = new PacketBufferPool(loggerFactory, poolSize);

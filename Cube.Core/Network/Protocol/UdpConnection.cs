@@ -24,7 +24,7 @@ public interface IUdpConnection : IDisposable
 public class UdpConnection : IUdpConnection
 {
     private readonly ILogger _logger;
-    private readonly UdpTracker _sequenceTracker = new();
+    private readonly UdpTracker _sequenceTracker;
     private readonly IUdpConnectionPool _udpConnectionPool;
 
     private EndPoint _remoteEndPoint = null!;
@@ -32,10 +32,11 @@ public class UdpConnection : IUdpConnection
 
     private bool _closed = false;
 
-    public UdpConnection(ILoggerFactory loggerFactory, IUdpConnectionPool udpConnectionPool)
+    public UdpConnection(ILoggerFactory loggerFactory, IUdpConnectionPool udpConnectionPool, int resendIntervalMs)
     {
         _logger = loggerFactory.CreateLogger<UdpConnection>();
         _udpConnectionPool = udpConnectionPool;
+        _sequenceTracker = new UdpTracker(resendIntervalMs);
     }
 
     public void BindEndPoint(EndPoint remoteEndPoint)

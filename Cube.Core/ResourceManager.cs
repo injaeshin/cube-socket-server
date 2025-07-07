@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Cube.Core.Pool;
 using System.Collections.Concurrent;
 using System.Net.Sockets;
+using Cube.Core.Settings;
 
 namespace Cube.Core;
 
@@ -29,26 +30,28 @@ public class ResourceManager : IResourceManager
     private readonly ILoggerFactory _loggerFactory;
     private readonly Dictionary<ResourceKey, IAsyncResource> _resources = [];
     private readonly ConcurrentDictionary<string, string> _status = new();
+    private readonly NetworkConfig _networkConfig;
 
-    public ResourceManager(ILoggerFactory loggerFactory, bool shouldUdp)
+    public ResourceManager(ILoggerFactory loggerFactory, ISettingsService settingsService)
     {
         _logger = loggerFactory.CreateLogger<ResourceManager>();
         _loggerFactory = loggerFactory;
+        _networkConfig = settingsService.Network;
 
-        CreateResources(loggerFactory, shouldUdp);
+        CreateResources(loggerFactory);
     }
 
-    private void CreateResources(ILoggerFactory loggerFactory, bool shouldUdp)
+    private void CreateResources(ILoggerFactory loggerFactory)
     {
-        var saeaPool = new SocketAsyncEventArgsPool(loggerFactory, CoreConsts.MAX_CONNECTIONS);
+        var saeaPool = new SocketAsyncEventArgsPool(loggerFactory, _networkConfig.MaxConnections);
         var saeaPoolHandler = new SAEAPoolHandler(saeaPool);
 
         CreateResource(ResourceKey.SocketAsyncEventArgsPool, saeaPool);
-        CreateResource(ResourceKey.TcpConnectionPool, new TcpConnectionPool(loggerFactory, saeaPoolHandler, CoreConsts.MAX_CONNECTIONS));
+        CreateResource(ResourceKey.TcpConnectionPool, new TcpConnectionPool(loggerFactory, saeaPoolHandler, _networkConfig.MaxConnections));
 
-        if (shouldUdp)
+        if (_networkConfig.UdpEnabled)
         {
-            CreateResource(ResourceKey.UdpConnectionPool, new UdpConnectionPool(loggerFactory, CoreConsts.MAX_CONNECTIONS));
+            CreateResource(ResourceKey.UdpConnectionPool, new UdpConnectionPool(loggerFactory, _networkConfig));
         }
     }
 

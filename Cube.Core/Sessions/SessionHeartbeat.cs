@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using Cube.Core.Settings;
 using Cube.Packet;
+using Cube.Packet.Builder;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -19,12 +21,12 @@ public interface IHeartbeat : ISessionHeartbeat
 }
 
 
-public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService, IHeartbeat
+public class SessionHeartbeat(ILogger<SessionHeartbeat> logger, HeartbeatConfig heartbeatConfig) : IHostedService, IHeartbeat
 {
     private readonly ILogger<SessionHeartbeat> _logger = logger;
     private readonly ConcurrentDictionary<string, HeartbeatState> _sessions = new();
-    private readonly TimeSpan _heartbeatInterval = TimeSpan.FromSeconds(CoreConsts.HEARTBEAT_INTERVAL);
-    private readonly TimeSpan _pingTimeout = TimeSpan.FromSeconds(CoreConsts.PING_TIMEOUT);
+    private readonly TimeSpan _heartbeatInterval = TimeSpan.FromSeconds(heartbeatConfig.Interval);
+    private readonly TimeSpan _pingTimeout = TimeSpan.FromSeconds(heartbeatConfig.PingTimeout);
     private Task? _workTask;
     private CancellationTokenSource _cts = null!;
 
@@ -112,24 +114,24 @@ public class SessionHeartbeat(ILogger<SessionHeartbeat> logger) : IHostedService
         {
             var now = DateTime.UtcNow;
             var sessionToProcess = _sessions.ToArray();
-            //foreach (var (_, ss) in sessionToProcess)
-            //{
-            //    switch (ss.StateType)
-            //    {
-            //        case HeartbeatStateType.Active:
-            //            if (now - ss.LastActivity > _heartbeatInterval)
-            //            {
-            //                await SendPingAsync(ss);
-            //            }
-            //            break;
-            //        case HeartbeatStateType.PingSent:
-            //            if (now - ss.LastPingTime > _pingTimeout)
-            //            {
-            //                CloseTimeoutSession(ss);
-            //            }
-            //            break;
-            //    }
-            //}
+            foreach (var (_, ss) in sessionToProcess)
+            {
+                switch (ss.StateType)
+                {
+                    case HeartbeatStateType.Active:
+                        if (now - ss.LastActivity > _heartbeatInterval)
+                        {
+                            await SendPingAsync(ss);
+                        }
+                        break;
+                    case HeartbeatStateType.PingSent:
+                        if (now - ss.LastPingTime > _pingTimeout)
+                        {
+                            CloseTimeoutSession(ss);
+                        }
+                        break;
+                }
+            }
 
         }
         catch (Exception ex)

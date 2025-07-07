@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
 using Cube.Core.Network;
 using Cube.Packet;
+using Cube.Core.Settings;
 
 namespace Cube.Core.Pool;
 
@@ -17,9 +18,9 @@ public class UdpConnectionPool : IUdpConnectionPool
     private readonly ObjectPool<IUdpConnection> _connPool;
     private volatile bool _stopped = false;
 
-    public UdpConnectionPool(ILoggerFactory loggerFactory, int poolSize = CoreConsts.MAX_CONNECTIONS)
+    public UdpConnectionPool(ILoggerFactory loggerFactory, NetworkConfig networkConfig)
     {
-        _connPool = new ObjectPool<IUdpConnection>(() => new UdpConnection(loggerFactory, this), poolSize);
+        _connPool = new ObjectPool<IUdpConnection>(() => new UdpConnection(loggerFactory, this, networkConfig.UdpResendIntervalMs), networkConfig.MaxConnections);
     }
 
     public Socket Rent() => throw new NotSupportedException();

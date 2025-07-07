@@ -1,6 +1,7 @@
 using System.Net;
 using Cube.Core.Network;
 using Cube.Packet;
+using Cube.Packet.Builder;
 
 namespace Cube.Client.Network;
 
@@ -20,7 +21,7 @@ public class UdpClient : IDisposable
     public event Action<string>? OnStatusChanged;
     public event Action<PacketType, ReadOnlyMemory<byte>>? OnPacketReceived;
 
-    public UdpClient(string serverAddress, int serverPort)
+    public UdpClient(string serverAddress, int serverPort, int resendIntervalMs)
     {
         _ip = serverAddress;
         _port = serverPort;
@@ -28,7 +29,7 @@ public class UdpClient : IDisposable
         _socket.OnStatusChanged += status => OnStatusChanged?.Invoke(status);
         _socket.OnDataReceived += OnSocketDataReceived;
 
-        _tracker = new UdpTracker();
+        _tracker = new UdpTracker(resendIntervalMs);
         _tracker.Run(
             async ctx => await Task.Run(() => _socket.Send(ctx.Data)),
             async ctx => await Task.Run(() =>

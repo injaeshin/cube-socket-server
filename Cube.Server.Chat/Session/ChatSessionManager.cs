@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Cube.Core;
 using Cube.Core.Sessions;
 using Cube.Core.Router;
+using Cube.Core.Settings;
 
 namespace Cube.Server.Chat.Session;
 
@@ -13,8 +14,8 @@ public class ChatSessionManager : SessionManager<ChatSession>, IChatSessionManag
 {
     private readonly ILogger _logger;
 
-    public ChatSessionManager(ILoggerFactory loggerFactory, IFunctionRouter functionRouter, IHeartbeat heartbeatMonitor)
-        : base(loggerFactory, functionRouter, heartbeatMonitor)
+    public ChatSessionManager(ILoggerFactory loggerFactory, IFunctionRouter functionRouter, IHeartbeat heartbeatMonitor, ISettingsService settingsService)
+        : base(loggerFactory, functionRouter, heartbeatMonitor, settingsService)
     {
         _logger = loggerFactory.CreateLogger<ChatSessionManager>();
     }

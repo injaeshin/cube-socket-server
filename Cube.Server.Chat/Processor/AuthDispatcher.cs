@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Cube.Core;
 using Cube.Packet;
 using Cube.Server.Chat.Model;
+using Cube.Packet.Builder;
 
 
 namespace Cube.Server.Chat.Processor;

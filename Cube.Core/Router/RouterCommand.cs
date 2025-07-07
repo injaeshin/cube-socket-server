@@ -42,14 +42,12 @@ public readonly struct UdpConnectedCmd
 {
     public string SessionId { get; init; }
     public ushort Sequence { get; init; }
-    public EndPoint Endpoint { get; init; }
     public IUdpConnection Connection { get; init; }
 
-    public UdpConnectedCmd(string sessionId, ushort sequence, EndPoint endpoint, IUdpConnection connection)
+    public UdpConnectedCmd(string sessionId, ushort sequence, IUdpConnection connection)
     {
         SessionId = sessionId;
         Sequence = sequence;
-        Endpoint = endpoint;
         Connection = connection;
     }
 }

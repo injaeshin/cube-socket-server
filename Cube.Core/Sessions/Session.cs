@@ -22,7 +22,7 @@ public class Session : ICoreSession, INotifySession
         _logger = logger;
         _heartbeat = heartbeat;
         _functionRouter = callbackRouter;
-        _sessionId = CoreHelper.CreateSessionId();
+        _sessionId = SessionHelper.CreateSessionId();
     }
 
     #region ISessionState

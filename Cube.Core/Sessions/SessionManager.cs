@@ -4,6 +4,8 @@ using System.Net;
 using Cube.Core.Network;
 using Cube.Core.Router;
 using Cube.Packet;
+using Cube.Core.Settings;
+using Cube.Packet.Builder;
 
 namespace Cube.Core.Sessions;
 
@@ -29,24 +31,27 @@ public abstract class SessionManager<T> : ISessionManager where T : ICoreSession
     private volatile bool _running = false;
 
     private readonly Timer _resendTimer;
+    private readonly NetworkConfig _networkConfig;
+    private readonly HeartbeatConfig _heartbeatConfig;
 
-    public SessionManager(ILoggerFactory loggerFactory, IFunctionRouter functionRouter, IHeartbeat heartbeatMonitor)
+    public SessionManager(ILoggerFactory loggerFactory, IFunctionRouter functionRouter, IHeartbeat heartbeatMonitor, ISettingsService settingsService)
     {
         _logger = loggerFactory.CreateLogger<SessionManager<T>>();
         _loggerFactory = loggerFactory;
         _functionRouter = functionRouter;
         _heartbeatMonitor = heartbeatMonitor;
+        _networkConfig = settingsService.Network;
+        _heartbeatConfig = settingsService.Heartbeat;
 
         _resendTimer = new Timer(
             _ => ResendUnacked(),
             null,
-            CoreConsts.RESEND_INTERVAL_MS,
-            CoreConsts.RESEND_INTERVAL_MS
+            _heartbeatConfig.ResendIntervalMs,
+            _heartbeatConfig.ResendIntervalMs
         );
 
-
         _functionRouter.AddFunc<TcpConnectedCmd, bool>(cmd => OnTcpClientConnected(cmd.Connection));
-        _functionRouter.AddFunc<UdpConnectedCmd, bool>(cmd => OnUdpClientConnected(cmd.SessionId, cmd.Sequence, cmd.Endpoint, cmd.Connection));
+        _functionRouter.AddFunc<UdpConnectedCmd, bool>(cmd => OnUdpClientConnected(cmd.SessionId, cmd.Sequence, cmd.Connection));
 
         _functionRouter.AddAction<UdpReceivedCmd>(cmd => OnUdpReceived(cmd.Context));
         _functionRouter.AddAction<UdpReceivedAckCmd>(cmd => OnUdpAckReceived(cmd.SessionId, cmd.Ack));
@@ -104,7 +109,7 @@ public abstract class SessionManager<T> : ISessionManager where T : ICoreSession
     {
         if (!_running) throw new InvalidOperationException("SessionManager is not running");
 
-        if (_sessions.Count >= CoreConsts.MAX_CONNECTIONS)
+        if (_sessions.Count >= _networkConfig.MaxConnections)
         {
             _logger.LogWarning("세션 생성 실패: 최대 접속 수 초과");
             return false;
@@ -130,7 +135,7 @@ public abstract class SessionManager<T> : ISessionManager where T : ICoreSession
         return true;
     }
 
-    public bool OnUdpClientConnected(string sessionId, ushort seq, EndPoint endpoint, IUdpConnection conn)
+    public bool OnUdpClientConnected(string sessionId, ushort seq, IUdpConnection conn)
     {
         if (!_running) throw new InvalidOperationException("SessionManager is not running");
 
